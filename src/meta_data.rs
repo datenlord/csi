@@ -141,8 +141,12 @@ impl MetaData {
     pub fn build_worker_client(&self, node_id: &str) -> WorkerClient {
         // let env = Arc::new(EnvBuilder::new().build());
         let env = Arc::new(Environment::new(1));
-        let ch =
-            ChannelBuilder::new(env).connect(&format!("{}:{}", node_id, self.get_worker_port()));
+        let work_address = if let RunAsRole::Controller = self.get_node_rule() {
+            util::LOCAL_WORKER_SOCKET.to_string()
+        } else {
+            format!("{}:{}", node_id, self.get_worker_port())
+        };
+        let ch = ChannelBuilder::new(env).connect(&work_address);
         let client = WorkerClient::new(ch);
         debug!(
             "build worker client to {}:{}",
@@ -200,6 +204,11 @@ impl MetaData {
     /// Get the node ID
     pub fn get_node_id(&self) -> &str {
         &self.node.node_id
+    }
+
+    /// Get the node rule
+    pub const fn get_node_rule(&self) -> RunAsRole {
+        self.run_as
     }
 
     /// Get the node worker service port
