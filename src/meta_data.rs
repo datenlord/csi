@@ -205,14 +205,20 @@ impl MetaData {
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
+=======
+>>>>>>> f00b70f... gRPC client supports socket file
     /// Get the node rule
     pub const fn get_node_rule(&self) -> RunAsRole {
         self.run_as
     }
 
+<<<<<<< HEAD
 =======
 >>>>>>> bf2de55... Refactor node and controller to different server
+=======
+>>>>>>> f00b70f... gRPC client supports socket file
     /// Get the node worker service port
     pub const fn get_worker_port(&self) -> u16 {
         self.node.worker_port
