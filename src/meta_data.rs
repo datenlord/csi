@@ -202,6 +202,19 @@ impl MetaData {
         &self.node.node_id
     }
 
+<<<<<<< HEAD
+=======
+    /// Get the node rule
+    pub const fn get_node_rule(&self) -> RunAsRole {
+        self.run_as
+    }
+
+    /// Get the node worker service port
+    pub const fn get_worker_port(&self) -> u16 {
+        self.node.worker_port
+    }
+
+>>>>>>> f00b70f... gRPC client supports socket file
     /// Is volume data ephemeral or not
     pub const fn is_ephemeral(&self) -> bool {
         self.ephemeral
