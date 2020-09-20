@@ -141,11 +141,12 @@ impl MetaData {
     pub fn build_worker_client(&self, node_id: &str) -> WorkerClient {
         // let env = Arc::new(EnvBuilder::new().build());
         let env = Arc::new(Environment::new(1));
-        let work_address = if let RunAsRole::Controller = self.get_node_rule() {
-            util::LOCAL_WORKER_SOCKET.to_string()
-        } else {
-            format!("{}:{}", node_id, self.get_worker_port())
-        };
+        let work_address =
+            if RunAsRole::Controller == self.get_node_rule() && self.get_node_id() == node_id {
+                util::LOCAL_WORKER_SOCKET.to_string()
+            } else {
+                format!("{}:{}", node_id, self.get_worker_port())
+            };
         let ch = ChannelBuilder::new(env).connect(&work_address);
         let client = WorkerClient::new(ch);
         debug!(
