@@ -8,6 +8,7 @@ use std::fmt::Debug;
 use super::util;
 
 /// The client to communicate with etcd
+#[derive(Clone)]
 pub struct EtcdClient {
     /// The inner etcd client
     etcd_rs_client: etcd_rs::Client,

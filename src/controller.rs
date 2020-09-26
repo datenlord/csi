@@ -35,6 +35,7 @@ pub struct ControllerImpl {
 
 impl ControllerImpl {
     /// Create `ControllerImpl`
+    #[allow(dead_code)]
     pub fn new(meta_data: Arc<MetaData>) -> Self {
         let cap_vec = if meta_data.is_ephemeral() {
             Vec::new()
@@ -455,6 +456,7 @@ impl Controller for ControllerImpl {
         // Do not return gRPC error when delete failed for idempotency
         let vol_res = self.meta_data.get_volume_by_id(vol_id);
         if let Some(vol) = vol_res {
+<<<<<<< HEAD
             let node_res = self.meta_data.get_node_by_id(&vol.node_id);
             if let Some(node) = node_res {
 <<<<<<< HEAD
@@ -475,6 +477,19 @@ impl Controller for ControllerImpl {
                             vol_id, vol.node_id, e,
                         );
                     }
+=======
+            let client = self
+                .meta_data
+                .build_worker_client(&vol.node_id, vol.worker_port);
+            let worker_delete_res = client.worker_delete_volume(&req);
+            match worker_delete_res {
+                Ok(_) => info!("successfully deleted volume ID={}", vol_id),
+                Err(e) => {
+                    warn!(
+                        "failed to delete volume ID={} on node ID={}, the error is: {}",
+                        vol_id, vol.node_id, e,
+                    );
+>>>>>>> bf2de55... Refactor node and controller to different server
                 }
             } else {
                 warn!("failed to find node ID={} to get work port", vol.node_id);
@@ -764,6 +779,7 @@ impl Controller for ControllerImpl {
         // Do not return gRPC error when delete failed for idempotency
         let snap_res = self.meta_data.get_snapshot_by_id(snap_id);
         if let Some(snap) = snap_res {
+<<<<<<< HEAD
             let node_res = self.meta_data.get_node_by_id(&snap.node_id);
             if let Some(node) = node_res {
 <<<<<<< HEAD
@@ -784,6 +800,19 @@ impl Controller for ControllerImpl {
                             snap_id, snap.node_id, e,
                         );
                     }
+=======
+            let client = self
+                .meta_data
+                .build_worker_client(&snap.node_id, snap.worker_port);
+            let worker_delete_res = client.worker_delete_snapshot(&req);
+            match worker_delete_res {
+                Ok(_r) => info!("successfully deleted sanpshot ID={}", snap_id),
+                Err(e) => {
+                    error!(
+                        "failed to delete snapshot ID={} on node ID={}, the error is: {}",
+                        snap_id, snap.node_id, e,
+                    );
+>>>>>>> bf2de55... Refactor node and controller to different server
                 }
             } else {
                 warn!("failed to find node ID={} to get work port", snap.node_id);
