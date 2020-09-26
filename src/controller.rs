@@ -35,6 +35,7 @@ pub struct ControllerImpl {
 
 impl ControllerImpl {
     /// Create `ControllerImpl`
+    #[allow(dead_code)]
     pub fn new(meta_data: Arc<MetaData>) -> Self {
         let cap_vec = if meta_data.is_ephemeral() {
             Vec::new()

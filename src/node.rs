@@ -59,6 +59,7 @@ impl NodeImpl {
             vol_id,
             &vol_name,
             self.meta_data.get_node_id(),
+            self.meta_data.get_worker_port(),
             &self.meta_data.get_volume_path(vol_id),
         );
         let volume = match vol_res {
