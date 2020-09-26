@@ -56,6 +56,7 @@ impl DatenLordNode {
 }
 
 /// The data structure to store volume and snapshot meta data
+#[derive(Clone)]
 pub struct MetaData {
     /// Volume and snapshot data directory
     data_dir: String,
@@ -138,22 +139,17 @@ impl MetaData {
     }
 
     /// Build `gRPC` client to `DatenLord` worker
-    pub fn build_worker_client(&self, node_id: &str) -> WorkerClient {
+    pub fn build_worker_client(&self, node_id: &str, worker_port: u16) -> WorkerClient {
         // let env = Arc::new(EnvBuilder::new().build());
         let env = Arc::new(Environment::new(1));
-        let work_address =
-            if RunAsRole::Controller == self.get_node_rule() && self.get_node_id() == node_id {
-                util::LOCAL_WORKER_SOCKET.to_string()
-            } else {
-                format!("{}:{}", node_id, self.get_worker_port())
-            };
+        let work_address = if worker_port == 0 {
+            util::LOCAL_WORKER_SOCKET.to_string()
+        } else {
+            format!("{}:{}", node_id, worker_port)
+        };
         let ch = ChannelBuilder::new(env).connect(&work_address);
         let client = WorkerClient::new(ch);
-        debug!(
-            "build worker client to {}:{}",
-            node_id,
-            self.get_worker_port(),
-        );
+        debug!("build worker client to {}", work_address,);
         client
     }
 
@@ -205,11 +201,6 @@ impl MetaData {
     /// Get the node ID
     pub fn get_node_id(&self) -> &str {
         &self.node.node_id
-    }
-
-    /// Get the node rule
-    pub const fn get_node_rule(&self) -> RunAsRole {
-        self.run_as
     }
 
     /// Get the node worker service port
@@ -1169,6 +1160,7 @@ impl MetaData {
                     snap_id.to_string(),
                     src_vol_id.to_owned(),
                     self.get_node_id().to_owned(),
+                    self.get_worker_port(),
                     snap_path,
                     now,
                     src_vol.get_size(),
@@ -1293,6 +1285,8 @@ pub struct DatenLordVolume {
     pub size_bytes: i64,
     /// The ID of the node the volume stored at
     pub node_id: String,
+    /// The port of worker service
+    pub worker_port: u16,
     /// The volume diretory path
     pub vol_path: PathBuf,
     /// Volume access mode
@@ -1313,6 +1307,8 @@ struct DatenLordVolumeBasicFields {
     pub size_bytes: i64,
     /// The ID of the node the volume stored at
     pub node_id: String,
+    /// The port of worker service
+    pub worker_port: u16,
     /// The volume diretory path
     pub vol_path: PathBuf,
     /// The volume is ephemeral or not
@@ -1358,6 +1354,7 @@ impl DatenLordVolume {
             vol_name: basic_fields.vol_name,
             size_bytes: basic_fields.size_bytes,
             node_id: basic_fields.node_id,
+            worker_port: basic_fields.worker_port,
             vol_path: basic_fields.vol_path,
             vol_access_mode: converted_vol_access_mode_vec,
             content_source: vol_source,
@@ -1380,6 +1377,7 @@ impl DatenLordVolume {
         vol_id: &str,
         vol_name: &str,
         node_id: &str,
+        worker_port: u16,
         vol_path: &Path,
     ) -> anyhow::Result<Self> {
         Self::new(
@@ -1388,6 +1386,7 @@ impl DatenLordVolume {
                 vol_name: vol_name.to_owned(),
                 size_bytes: util::EPHEMERAL_VOLUME_STORAGE_CAPACITY,
                 node_id: node_id.to_owned(),
+                worker_port,
                 vol_path: vol_path.to_owned(),
                 ephemeral: true, // ephemeral
             },
@@ -1401,6 +1400,7 @@ impl DatenLordVolume {
         req: &CreateVolumeRequest,
         vol_id: &str,
         node_id: &str,
+        worker_port: u16,
         vol_path: &Path,
     ) -> anyhow::Result<Self> {
         Self::new(
@@ -1409,6 +1409,7 @@ impl DatenLordVolume {
                 vol_name: req.get_name().to_owned(),
                 size_bytes: req.get_capacity_range().get_required_bytes(),
                 node_id: node_id.to_owned(),
+                worker_port,
                 vol_path: vol_path.to_owned(),
                 ephemeral: false,
             },
@@ -1470,6 +1471,8 @@ pub struct DatenLordSnapshot {
     pub vol_id: String,
     /// The ID of the node the snapshot stored at
     pub node_id: String,
+    /// The port of worker service
+    pub worker_port: u16,
     /// Snapshot path
     pub snap_path: PathBuf,
     /// Snapshot creation time
@@ -1487,6 +1490,7 @@ impl DatenLordSnapshot {
         snap_id: String,
         vol_id: String,
         node_id: String,
+        worker_port: u16,
         snap_path: PathBuf,
         creation_time: std::time::SystemTime,
         size_bytes: i64,
@@ -1501,6 +1505,7 @@ impl DatenLordSnapshot {
             snap_id,
             vol_id,
             node_id,
+            worker_port,
             snap_path,
             creation_time,
             size_bytes,

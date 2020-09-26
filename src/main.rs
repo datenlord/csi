@@ -90,6 +90,7 @@ mod node;
 mod util;
 mod worker;
 
+#[allow(unused_imports)]
 use controller::ControllerImpl;
 use etcd_client::EtcdClient;
 use identity::IdentityImpl;
@@ -104,27 +105,13 @@ use grpcio::{Environment, Server};
 use log::{debug, info};
 use std::sync::Arc;
 
-/// Build CSI and worker service
-fn build_grpc_servers(
-    end_point: String,
+fn build_meta_data(
     worker_port: u16,
     node_id: String,
-    driver_name: String,
     data_dir: String,
     run_as: RunAsRole,
     etcd_client: EtcdClient,
-) -> anyhow::Result<(Server, Server)> {
-    remove_socket_file(&end_point);
-    remove_socket_file(util::LOCAL_WORKER_SOCKET);
-
-    let (worker_bind_address, worker_bind_port) = if let RunAsRole::Controller = run_as {
-        // In this case, run controller only, so worker server won't be public,
-        // bind worker service at a socket file and port as 0
-        (util::LOCAL_WORKER_SOCKET, 0) // Non-public worker service
-    } else {
-        ("0.0.0.0", worker_port) // Public worker service
-    };
-
+) -> anyhow::Result<MetaData> {
     let ephemeral = false; // TODO: read from command line argument
     let node = DatenLordNode::new(
         node_id,
@@ -132,15 +119,72 @@ fn build_grpc_servers(
         util::MAX_VOLUME_STORAGE_CAPACITY,
         util::MAX_VOLUMES_PER_NODE,
     );
-    let md = MetaData::new(data_dir, ephemeral, run_as, etcd_client, node)?;
-    let meta_data = Arc::new(md);
+    MetaData::new(data_dir, ephemeral, run_as, etcd_client, node)
+}
+
+/// Build worker service
+fn build_grpc_worker_servers(worker_port: u16, meta_data: MetaData) -> anyhow::Result<Server> {
+    remove_socket_file(util::LOCAL_WORKER_SOCKET);
+
+    let (worker_bind_address, worker_bind_port) = if worker_port == 0 {
+        // In this case, worker server won't be public,
+        // bind worker service at a socket file and port as 0
+        (util::LOCAL_WORKER_SOCKET, 0) // Non-public worker service
+    } else {
+        ("0.0.0.0", worker_port) // Public worker service
+    };
+    let md = Arc::new(meta_data);
+    let worker_service = datenlord_worker_grpc::create_worker(WorkerImpl::new(md));
+    let worker_server = grpcio::ServerBuilder::new(Arc::new(Environment::new(1)))
+        .register_service(worker_service)
+        .bind(worker_bind_address, worker_bind_port)
+        // .channel_args(ch_builder.build_args())
+        .build()
+        .context("failed to build DatenLord worker server")?;
+
+    Ok(worker_server)
+}
+
+fn build_grpc_node_servers(
+    end_point: &str,
+    driver_name: &str,
+    meta_data: MetaData,
+) -> anyhow::Result<Server> {
+    remove_socket_file(&end_point);
+
+    let md = Arc::new(meta_data);
     let identity_service = csi_grpc::create_identity(IdentityImpl::new(
-        driver_name,
+        driver_name.to_string(),
+        util::CSI_PLUGIN_VERSION.to_owned(),
+    ));
+    let node_service = csi_grpc::create_node(NodeImpl::new(Arc::<MetaData>::clone(&md)));
+    let node_server = grpcio::ServerBuilder::new(Arc::new(Environment::new(1)))
+        .register_service(identity_service)
+        .register_service(node_service)
+        .bind(end_point, 0)
+        // .channel_args(ch_builder.build_args())
+        .build()
+        .context("failed to build DatenLord worker server")?;
+
+    Ok(node_server)
+}
+
+/// Build CSI service
+fn build_grpc_csi_servers(
+    end_point: &str,
+    driver_name: &str,
+    meta_data: MetaData,
+) -> anyhow::Result<Server> {
+    remove_socket_file(&end_point);
+
+    let md = Arc::new(meta_data);
+
+    let identity_service = csi_grpc::create_identity(IdentityImpl::new(
+        driver_name.to_string(),
         util::CSI_PLUGIN_VERSION.to_owned(),
     ));
     let controller_service =
-        csi_grpc::create_controller(ControllerImpl::new(Arc::<MetaData>::clone(&meta_data)));
-    let node_service = csi_grpc::create_node(NodeImpl::new(Arc::<MetaData>::clone(&meta_data)));
+        csi_grpc::create_controller(ControllerImpl::new(Arc::<MetaData>::clone(&md)));
 
     // let (mem_size, overflow) = 1024_usize.overflowing_mul(1024);
     // debug_assert!(!overflow, "computing memory size overflowed");
@@ -149,26 +193,17 @@ fn build_grpc_servers(
     let csi_server = grpcio::ServerBuilder::new(Arc::new(Environment::new(1)))
         .register_service(identity_service)
         .register_service(controller_service)
-        .register_service(node_service)
         .bind(end_point, 0) // Port is not need when bind to socket file
         // .channel_args(ch_builder.build_args())
         .build()
         .context("failed to build CSI gRPC server")?;
 
+    Ok(csi_server)
     // let env = Arc::new(Environment::new(1));
     // let (mem_size2, overflow2) = 1024_usize.overflowing_mul(1024);
     // debug_assert!(!overflow2, "computing memory size overflowed");
     // let quota = ResourceQuota::new(Some("WorkerQuota")).resize_memory(mem_size2);
     // let ch_builder = ChannelBuilder::new(Arc::<Environment>::clone(&env)).set_resource_quota(quota);
-    let worker_service = datenlord_worker_grpc::create_worker(WorkerImpl::new(meta_data));
-    let worker_server = grpcio::ServerBuilder::new(Arc::new(Environment::new(1)))
-        .register_service(worker_service)
-        .bind(worker_bind_address, worker_bind_port)
-        // .channel_args(ch_builder.build_args())
-        .build()
-        .context("failed to build DatenLord worker server")?;
-
-    Ok((csi_server, worker_server))
 }
 
 /// Remove existing socket file before run CSI `gRPC` server
@@ -192,8 +227,8 @@ fn run_server_helper(srv: &mut Server) {
 }
 
 /// Run server synchronuously
-fn run_sync_servers(mut csi_server: Server, mut worker_server: Server) {
-    run_server_helper(&mut csi_server);
+fn run_sync_servers(mut node_server: Server, mut worker_server: Server) {
+    run_server_helper(&mut node_server);
     run_server_helper(&mut worker_server);
 
     loop {
@@ -202,16 +237,16 @@ fn run_sync_servers(mut csi_server: Server, mut worker_server: Server) {
 }
 
 /// Run server asynchronuously
-fn run_async_servers(csi_server: Server, worker_server: Server) {
+fn run_async_servers(node_server: Server, worker_server: Server) {
     /// The future to run `gRPC` server
-    async fn run_server(mut csi_server: Server, mut worker_server: Server) {
-        run_server_helper(&mut csi_server);
+    async fn run_server(mut node_server: Server, mut worker_server: Server) {
+        run_server_helper(&mut node_server);
         run_server_helper(&mut worker_server);
         let f = futures::future::pending::<()>();
         f.await;
     }
     smol::run(async move {
-        run_server(csi_server, worker_server).await;
+        run_server(node_server, worker_server).await;
     });
 }
 
@@ -334,7 +369,7 @@ fn main() -> anyhow::Result<()> {
             }
             sock
         }
-        None => util::END_POINT.to_owned(),
+        None => panic!("No valid socket end point, use the default one"),
     };
     let worker_port = match matches.value_of(WORKER_PORT_ARG_NAME) {
         Some(p) => match p.parse::<u16>() {
@@ -390,21 +425,24 @@ fn main() -> anyhow::Result<()> {
     );
 
     let etcd_client = EtcdClient::new(etcd_address_vec)?;
-    let (csi_server, worker_server) = build_grpc_servers(
-        end_point,
-        worker_port,
-        node_id,
-        driver_name,
-        data_dir,
-        run_as,
-        etcd_client,
-    )?;
-    let async_server = false;
-    if async_server {
-        run_async_servers(csi_server, worker_server);
+    let meta_data = build_meta_data(worker_port, node_id, data_dir, run_as, etcd_client)?;
+    let mut csi_server = build_grpc_csi_servers(&end_point, &driver_name, meta_data.clone())?;
+    if RunAsRole::Controller == run_as {
+        run_server_helper(&mut csi_server);
+        loop {
+            std::thread::park();
+        }
     } else {
-        run_sync_servers(csi_server, worker_server);
+        let worker_server = build_grpc_worker_servers(worker_port, meta_data.clone())?;
+        let node_server = build_grpc_node_servers(&end_point, &driver_name, meta_data.clone())?;
+        let async_server = false;
+        if async_server {
+            run_async_servers(node_server, worker_server);
+        } else {
+            run_sync_servers(node_server, worker_server);
+        }
     }
+
     Ok(())
 }
 
@@ -441,7 +479,11 @@ mod test {
     const NODE_PUBLISH_VOLUME_ID: &str = "46ebd0ee-0e6d-43c9-b90d-ccc35a913f3e";
     const DEFAULT_ETCD_ENDPOINT_FOR_TEST: &str = "http://127.0.0.1:2379";
     const ETCD_ENV_VAR_KEY: &str = "ETCD_END_POINT";
-    const WORKER_PORT_ENV_VAR_KEY: &str = "WORKER_PORT";
+    /// The csi server socket file to communicate with K8S CSI sidecars
+    const END_POINT: &str = "unix:///tmp/csi.sock";
+    /// The node server socket file to communicate with K8S CSI sidecars
+    const NODE_END_POINT: &str = "unix:///tmp/node.sock";
+    // const WORKER_PORT_ENV_VAR_KEY: &str = "WORKER_PORT";
     static GRPC_SERVER: Once = Once::new();
 
     #[test]
@@ -484,7 +526,7 @@ mod test {
         Ok(())
     }
 
-    fn build_meta_data() -> anyhow::Result<MetaData> {
+    fn build_test_meta_data() -> anyhow::Result<MetaData> {
         let etcd_address_vec = get_etcd_address_vec();
         let etcd_client = EtcdClient::new(etcd_address_vec)?;
         clear_test_data(&etcd_client)?;
@@ -504,12 +546,13 @@ mod test {
     }
 
     fn test_meta_data() -> anyhow::Result<()> {
-        let meta_data = build_meta_data()?;
+        let meta_data = build_test_meta_data()?;
         let vol_id = "the-fake-ephemeral-volume-id-for-meta-data-test";
         let mut volume = meta_data::DatenLordVolume::build_ephemeral_volume(
             vol_id,
             "ephemeral-volume", // vol_name
             util::DEFAULT_NODE_NAME,
+            util::DEFAULT_PORT,
             meta_data.get_volume_path(NODE_PUBLISH_VOLUME_ID).as_path(), // vol_path
         )?;
         let add_vol_res = meta_data.add_volume_meta_data(vol_id, &volume);
@@ -557,6 +600,7 @@ mod test {
             snap_id.to_owned(),              //snap_id,
             vol_id.to_owned(),
             meta_data.get_node_id().to_owned(),
+            meta_data.get_worker_port(),
             meta_data.get_snapshot_path(snap_id),
             std::time::SystemTime::now(),
             0, // size_bytes,
@@ -603,26 +647,27 @@ mod test {
         Path::new(util::DATA_DIR).join(vol_id)
     }
 
-    fn get_worker_port() -> u16 {
-        match std::env::var(WORKER_PORT_ENV_VAR_KEY) {
-            Ok(val) => {
-                debug!("{}={}", WORKER_PORT_ENV_VAR_KEY, val);
-                match val.parse::<u16>() {
-                    Ok(port) => port,
-                    Err(e) => panic!(
-                        "failed to parse worker port={} to u16, \
-                            the error is: {}",
-                        val, e,
-                    ),
-                }
-            }
-            Err(_) => util::DEFAULT_PORT,
-        }
-    }
+    // fn get_worker_port() -> u16 {
+    //     match std::env::var(WORKER_PORT_ENV_VAR_KEY) {
+    //         Ok(val) => {
+    //             debug!("{}={}", WORKER_PORT_ENV_VAR_KEY, val);
+    //             match val.parse::<u16>() {
+    //                 Ok(port) => port,
+    //                 Err(e) => panic!(
+    //                     "failed to parse worker port={} to u16, \
+    //                         the error is: {}",
+    //                     val, e,
+    //                 ),
+    //             }
+    //         }
+    //         Err(_) => util::DEFAULT_PORT,
+    //     }
+    // }
 
     fn run_server() -> anyhow::Result<()> {
-        let end_point = util::END_POINT.to_owned();
-        let worker_port = get_worker_port();
+        let end_point = END_POINT.to_owned();
+        let node_end_point = NODE_END_POINT.to_owned();
+        let worker_port = 0;
         let node_id = util::DEFAULT_NODE_NAME.to_owned();
         let driver_name = util::CSI_PLUGIN_NAME.to_owned();
         let data_dir = util::DATA_DIR.to_owned();
@@ -638,29 +683,40 @@ mod test {
                 "failed to clear test data, the error is: {}",
                 clear_res.unwrap_err(),
             );
-
-            let (csi_server, worker_server) = match build_grpc_servers(
-                end_point,
-                worker_port,
-                node_id,
-                driver_name,
-                data_dir,
-                run_as,
-                etcd_client,
-            ) {
-                Ok((s1, s2)) => (s1, s2),
-                Err(e) => panic!(
-                    "failed to build CSI server and worker server, \
-                        the error is : {}",
-                    e,
-                ),
+            let meta_data =
+                match build_meta_data(worker_port, node_id, data_dir, run_as, etcd_client) {
+                    Ok(md) => md,
+                    Err(e) => panic!("failed to build meta data, the error is : {}", e,),
+                };
+            let mut csi_server =
+                match build_grpc_csi_servers(&end_point, &driver_name, meta_data.clone()) {
+                    Ok(server) => server,
+                    Err(e) => panic!("failed to build CSI server, the error is : {}", e,),
+                };
+            let mut node_server =
+                match build_grpc_node_servers(&node_end_point, &driver_name, meta_data.clone()) {
+                    Ok(server) => server,
+                    Err(e) => panic!("failed to build Node server, the error is : {}", e,),
+                };
+            let mut worker_server = match build_grpc_worker_servers(worker_port, meta_data.clone())
+            {
+                Ok(server) => server,
+                Err(e) => panic!("failed to build Worker server, the error is : {}", e,),
             };
+
             // Keep running the task in the background
             let _th = thread::spawn(move || {
                 if async_server {
-                    run_async_servers(csi_server, worker_server);
+                    // TODO: Run servers async.
+                    //run_async_servers(csi_server, node_server);
                 } else {
-                    run_sync_servers(csi_server, worker_server);
+                    run_server_helper(&mut csi_server);
+                    run_server_helper(&mut worker_server);
+                    run_server_helper(&mut node_server);
+
+                    loop {
+                        std::thread::park();
+                    }
                 }
             });
         });
@@ -671,7 +727,7 @@ mod test {
     fn build_identity_client() -> anyhow::Result<IdentityClient> {
         run_server()?;
         let env = Arc::new(EnvBuilder::new().build());
-        let ch = ChannelBuilder::new(env).connect(util::END_POINT);
+        let ch = ChannelBuilder::new(env).connect(END_POINT);
         let identity_client = IdentityClient::new(ch);
         Ok(identity_client)
     }
@@ -727,7 +783,7 @@ mod test {
     fn build_controller_client() -> anyhow::Result<ControllerClient> {
         run_server()?;
         let env = Arc::new(EnvBuilder::new().build());
-        let ch = ChannelBuilder::new(env).connect(util::END_POINT);
+        let ch = ChannelBuilder::new(env).connect(END_POINT);
         let controller_client = ControllerClient::new(ch);
         Ok(controller_client)
     }
@@ -1374,7 +1430,7 @@ mod test {
     fn build_node_client() -> anyhow::Result<NodeClient> {
         run_server()?;
         let env = Arc::new(EnvBuilder::new().build());
-        let ch = ChannelBuilder::new(env).connect(util::END_POINT);
+        let ch = ChannelBuilder::new(env).connect(NODE_END_POINT);
         let node_client = NodeClient::new(ch);
         Ok(node_client)
     }
