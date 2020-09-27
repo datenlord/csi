@@ -1180,16 +1180,16 @@ impl MetaData {
                 }
 
                 let now = std::time::SystemTime::now();
-                let snapshot = DatenLordSnapshot::new(
-                    snap_name.to_owned(),
-                    snap_id.to_string(),
-                    src_vol_id.to_owned(),
-                    self.get_node_id().to_owned(),
-                    self.get_worker_port(),
+                let snapshot = DatenLordSnapshot::new(DatenLordSnapshotParam {
+                    snap_name: snap_name.to_owned(),
+                    snap_id: snap_id.to_string(),
+                    vol_id: src_vol_id.to_owned(),
+                    node_id: self.get_node_id().to_owned(),
+                    worker_port: self.get_worker_port(),
                     snap_path,
-                    now,
-                    src_vol.get_size(),
-                );
+                    creation_time: now,
+                    size_bytes: src_vol.get_size(),
+                });
 
                 Ok(snapshot)
             }
@@ -1485,6 +1485,26 @@ impl DatenLordVolume {
     }
 }
 
+/// `DatenLordSnapshot` new parameter
+pub struct DatenLordSnapshotParam {
+    /// Snapshot name
+    pub snap_name: String,
+    /// Snapshto ID
+    pub snap_id: String,
+    /// The source volume ID of the snapshot
+    pub vol_id: String,
+    /// The ID of the node the snapshot stored at
+    pub node_id: String,
+    /// The port of worker service
+    pub worker_port: u16,
+    /// Snapshot path
+    pub snap_path: PathBuf,
+    /// Snapshot creation time
+    pub creation_time: std::time::SystemTime,
+    /// Snapshot size in bytes
+    pub size_bytes: i64,
+}
+
 /// Snapshot
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DatenLordSnapshot {
@@ -1510,30 +1530,25 @@ pub struct DatenLordSnapshot {
 
 impl DatenLordSnapshot {
     /// Create `DatenLordSnapshot`
-    pub fn new(
-        snap_name: String,
-        snap_id: String,
-        vol_id: String,
-        node_id: String,
-        worker_port: u16,
-        snap_path: PathBuf,
-        creation_time: std::time::SystemTime,
-        size_bytes: i64,
-    ) -> Self {
-        assert!(!snap_id.is_empty(), "snapshot ID cannot be empty");
-        assert!(!snap_name.is_empty(), "snapshot name cannot be empty");
-        assert!(!vol_id.is_empty(), "source volume ID cannot be empty");
-        assert!(!node_id.is_empty(), "node ID cannot be empty");
-        assert!(size_bytes >= 0, "invalid snapshot size: {}", size_bytes);
+    pub fn new(param: DatenLordSnapshotParam) -> Self {
+        assert!(!param.snap_id.is_empty(), "snapshot ID cannot be empty");
+        assert!(!param.snap_name.is_empty(), "snapshot name cannot be empty");
+        assert!(!param.vol_id.is_empty(), "source volume ID cannot be empty");
+        assert!(!param.node_id.is_empty(), "node ID cannot be empty");
+        assert!(
+            param.size_bytes >= 0,
+            "invalid snapshot size: {}",
+            param.size_bytes
+        );
         Self {
-            snap_name,
-            snap_id,
-            vol_id,
-            node_id,
-            worker_port,
-            snap_path,
-            creation_time,
-            size_bytes,
+            snap_name: param.snap_name,
+            snap_id: param.snap_id,
+            vol_id: param.vol_id,
+            node_id: param.node_id,
+            worker_port: param.worker_port,
+            snap_path: param.snap_path,
+            creation_time: param.creation_time,
+            size_bytes: param.size_bytes,
             ready_to_use: true, // TODO: check whether the snapshot is ready to use or not
         }
     }
