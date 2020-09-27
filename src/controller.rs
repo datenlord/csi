@@ -280,9 +280,7 @@ impl ControllerImpl {
                 ));
             }
         };
-        let client = self
-            .meta_data
-            .build_worker_client(&worker_node.node_id, worker_node.worker_port);
+        let client = MetaData::build_worker_client(&worker_node.node_id, worker_node.worker_port);
         let create_res = client.worker_create_volume(req);
         match create_res {
             Ok(resp) => Ok(resp),
@@ -458,9 +456,7 @@ impl Controller for ControllerImpl {
         // Do not return gRPC error when delete failed for idempotency
         let vol_res = self.meta_data.get_volume_by_id(vol_id);
         if let Some(vol) = vol_res {
-            let client = self
-                .meta_data
-                .build_worker_client(&vol.node_id, vol.worker_port);
+            let client = MetaData::build_worker_client(&vol.node_id, vol.worker_port);
             let worker_delete_res = client.worker_delete_volume(&req);
             match worker_delete_res {
                 Ok(_) => info!("successfully deleted volume ID={}", vol_id),
@@ -698,9 +694,7 @@ impl Controller for ControllerImpl {
 
         match self.meta_data.get_volume_by_id(src_vol_id) {
             Some(src_vol) => {
-                let client = self
-                    .meta_data
-                    .build_worker_client(&src_vol.node_id, src_vol.worker_port);
+                let client = MetaData::build_worker_client(&src_vol.node_id, src_vol.worker_port);
                 let create_res = client.worker_create_snapshot(&req);
                 match create_res {
                     Ok(r) => util::success(&ctx, sink, r),
@@ -753,9 +747,7 @@ impl Controller for ControllerImpl {
         // Do not return gRPC error when delete failed for idempotency
         let snap_res = self.meta_data.get_snapshot_by_id(snap_id);
         if let Some(snap) = snap_res {
-            let client = self
-                .meta_data
-                .build_worker_client(&snap.node_id, snap.worker_port);
+            let client = MetaData::build_worker_client(&snap.node_id, snap.worker_port);
             let worker_delete_res = client.worker_delete_snapshot(&req);
             match worker_delete_res {
                 Ok(_r) => info!("successfully deleted sanpshot ID={}", snap_id),

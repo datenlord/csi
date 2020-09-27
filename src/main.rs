@@ -105,6 +105,7 @@ use grpcio::{Environment, Server};
 use log::{debug, info};
 use std::sync::Arc;
 
+/// Build meta data
 fn build_meta_data(
     worker_port: u16,
     node_id: String,
@@ -145,12 +146,13 @@ fn build_grpc_worker_servers(worker_port: u16, meta_data: MetaData) -> anyhow::R
     Ok(worker_server)
 }
 
+/// Build node service
 fn build_grpc_node_servers(
     end_point: &str,
     driver_name: &str,
     meta_data: MetaData,
 ) -> anyhow::Result<Server> {
-    remove_socket_file(&end_point);
+    remove_socket_file(end_point);
 
     let md = Arc::new(meta_data);
     let identity_service = csi_grpc::create_identity(IdentityImpl::new(
@@ -175,7 +177,7 @@ fn build_grpc_csi_servers(
     driver_name: &str,
     meta_data: MetaData,
 ) -> anyhow::Result<Server> {
-    remove_socket_file(&end_point);
+    remove_socket_file(end_point);
 
     let md = Arc::new(meta_data);
 
@@ -434,7 +436,7 @@ fn main() -> anyhow::Result<()> {
         }
     } else {
         let worker_server = build_grpc_worker_servers(worker_port, meta_data.clone())?;
-        let node_server = build_grpc_node_servers(&end_point, &driver_name, meta_data.clone())?;
+        let node_server = build_grpc_node_servers(&end_point, &driver_name, meta_data)?;
         let async_server = false;
         if async_server {
             run_async_servers(node_server, worker_server);
@@ -595,16 +597,16 @@ mod test {
         );
 
         let snap_id = "the-fake-snapshot-id-for-meta-data-test";
-        let snapshot = meta_data::DatenLordSnapshot::new(
-            "test-snapshot-name".to_owned(), //snap_name,
-            snap_id.to_owned(),              //snap_id,
-            vol_id.to_owned(),
-            meta_data.get_node_id().to_owned(),
-            meta_data.get_worker_port(),
-            meta_data.get_snapshot_path(snap_id),
-            std::time::SystemTime::now(),
-            0, // size_bytes,
-        );
+        let snapshot = meta_data::DatenLordSnapshot::new(meta_data::DatenLordSnapshotParam {
+            snap_name: "test-snapshot-name".to_owned(), //snap_name,
+            snap_id: snap_id.to_owned(),                //snap_id,
+            vol_id: vol_id.to_owned(),
+            node_id: meta_data.get_node_id().to_owned(),
+            worker_port: meta_data.get_worker_port(),
+            snap_path: meta_data.get_snapshot_path(snap_id),
+            creation_time: std::time::SystemTime::now(),
+            size_bytes: 0, // size_bytes,
+        });
         let add_snap_res = meta_data.add_snapshot_meta_data(snap_id, &snapshot);
         assert!(
             add_snap_res.is_ok(),
