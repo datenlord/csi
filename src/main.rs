@@ -90,7 +90,6 @@ mod node;
 mod util;
 mod worker;
 
-#[allow(unused_imports)]
 use controller::ControllerImpl;
 use etcd_client::EtcdClient;
 use identity::IdentityImpl;
