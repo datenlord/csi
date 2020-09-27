@@ -699,8 +699,7 @@ mod test {
                     Ok(server) => server,
                     Err(e) => panic!("failed to build Node server, the error is : {}", e,),
                 };
-            let mut worker_server = match build_grpc_worker_servers(worker_port, meta_data.clone())
-            {
+            let mut worker_server = match build_grpc_worker_servers(worker_port, meta_data) {
                 Ok(server) => server,
                 Err(e) => panic!("failed to build Worker server, the error is : {}", e,),
             };
