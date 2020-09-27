@@ -457,6 +457,7 @@ impl Controller for ControllerImpl {
         let vol_res = self.meta_data.get_volume_by_id(vol_id);
         if let Some(vol) = vol_res {
 <<<<<<< HEAD
+<<<<<<< HEAD
             let node_res = self.meta_data.get_node_by_id(&vol.node_id);
             if let Some(node) = node_res {
 <<<<<<< HEAD
@@ -481,6 +482,9 @@ impl Controller for ControllerImpl {
             let client = self
                 .meta_data
                 .build_worker_client(&vol.node_id, vol.worker_port);
+=======
+            let client = MetaData::build_worker_client(&vol.node_id, vol.worker_port);
+>>>>>>> bc3c8dd... Change github workflows
             let worker_delete_res = client.worker_delete_volume(&req);
             match worker_delete_res {
                 Ok(_) => info!("successfully deleted volume ID={}", vol_id),
@@ -721,6 +725,7 @@ impl Controller for ControllerImpl {
 
         match self.meta_data.get_volume_by_id(src_vol_id) {
             Some(src_vol) => {
+<<<<<<< HEAD
                 let node_res = self.meta_data.get_node_by_id(&src_vol.node_id);
                 if let Some(node) = node_res {
                     let client = MetaData::build_worker_client(&node);
@@ -736,6 +741,18 @@ impl Controller for ControllerImpl {
                     }
                 } else {
                     warn!("failed to find node ID={} from etcd", src_vol.node_id);
+=======
+                let client = MetaData::build_worker_client(&src_vol.node_id, src_vol.worker_port);
+                let create_res = client.worker_create_snapshot(&req);
+                match create_res {
+                    Ok(r) => util::success(&ctx, sink, r),
+                    Err(e) => util::fail(
+                        &ctx,
+                        sink,
+                        RpcStatusCode::INTERNAL,
+                        format!("failed to create snapshot, the error is: {}", e),
+                    ),
+>>>>>>> bc3c8dd... Change github workflows
                 }
             }
             None => util::fail(
@@ -780,6 +797,7 @@ impl Controller for ControllerImpl {
         let snap_res = self.meta_data.get_snapshot_by_id(snap_id);
         if let Some(snap) = snap_res {
 <<<<<<< HEAD
+<<<<<<< HEAD
             let node_res = self.meta_data.get_node_by_id(&snap.node_id);
             if let Some(node) = node_res {
 <<<<<<< HEAD
@@ -804,6 +822,9 @@ impl Controller for ControllerImpl {
             let client = self
                 .meta_data
                 .build_worker_client(&snap.node_id, snap.worker_port);
+=======
+            let client = MetaData::build_worker_client(&snap.node_id, snap.worker_port);
+>>>>>>> bc3c8dd... Change github workflows
             let worker_delete_res = client.worker_delete_snapshot(&req);
             match worker_delete_res {
                 Ok(_r) => info!("successfully deleted sanpshot ID={}", snap_id),
