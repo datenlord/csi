@@ -56,7 +56,6 @@ impl DatenLordNode {
 }
 
 /// The data structure to store volume and snapshot meta data
-#[derive(Clone)]
 pub struct MetaData {
     /// Volume and snapshot data directory
     data_dir: String,
@@ -203,11 +202,6 @@ impl MetaData {
         &self.node.node_id
     }
 
-    /// Get the node worker service port
-    pub const fn get_worker_port(&self) -> u16 {
-        self.node.worker_port
-    }
-
     /// Is volume data ephemeral or not
     pub const fn is_ephemeral(&self) -> bool {
         self.ephemeral
@@ -216,6 +210,20 @@ impl MetaData {
     /// Get max volumes per node
     pub const fn get_max_volumes_per_node(&self) -> i32 {
         self.node.max_volumes_per_node
+    }
+
+    /// Get node by ID
+    pub fn get_node_by_id(&self, node_id: &str) -> Option<DatenLordNode> {
+        let get_res = self
+            .etcd_client
+            .get_at_most_one_value(&format!("{}/{}", NODE_PREFIX, node_id));
+        match get_res {
+            Ok(val) => val,
+            Err(e) => {
+                debug!("failed to get node ID={}, the error is: {}", node_id, e);
+                None
+            }
+        }
     }
 
     /// Get snapshot by ID
@@ -1155,16 +1163,15 @@ impl MetaData {
                 }
 
                 let now = std::time::SystemTime::now();
-                let snapshot = DatenLordSnapshot::new(DatenLordSnapshotParam {
-                    snap_name: snap_name.to_owned(),
-                    snap_id: snap_id.to_string(),
-                    vol_id: src_vol_id.to_owned(),
-                    node_id: self.get_node_id().to_owned(),
-                    worker_port: self.get_worker_port(),
+                let snapshot = DatenLordSnapshot::new(
+                    snap_name.to_owned(),
+                    snap_id.to_string(),
+                    src_vol_id.to_owned(),
+                    self.get_node_id().to_owned(),
                     snap_path,
-                    creation_time: now,
-                    size_bytes: src_vol.get_size(),
-                });
+                    now,
+                    src_vol.get_size(),
+                );
 
                 Ok(snapshot)
             }
@@ -1285,8 +1292,6 @@ pub struct DatenLordVolume {
     pub size_bytes: i64,
     /// The ID of the node the volume stored at
     pub node_id: String,
-    /// The port of worker service
-    pub worker_port: u16,
     /// The volume diretory path
     pub vol_path: PathBuf,
     /// Volume access mode
@@ -1307,8 +1312,6 @@ struct DatenLordVolumeBasicFields {
     pub size_bytes: i64,
     /// The ID of the node the volume stored at
     pub node_id: String,
-    /// The port of worker service
-    pub worker_port: u16,
     /// The volume diretory path
     pub vol_path: PathBuf,
     /// The volume is ephemeral or not
@@ -1354,7 +1357,6 @@ impl DatenLordVolume {
             vol_name: basic_fields.vol_name,
             size_bytes: basic_fields.size_bytes,
             node_id: basic_fields.node_id,
-            worker_port: basic_fields.worker_port,
             vol_path: basic_fields.vol_path,
             vol_access_mode: converted_vol_access_mode_vec,
             content_source: vol_source,
@@ -1377,7 +1379,6 @@ impl DatenLordVolume {
         vol_id: &str,
         vol_name: &str,
         node_id: &str,
-        worker_port: u16,
         vol_path: &Path,
     ) -> anyhow::Result<Self> {
         Self::new(
@@ -1386,7 +1387,6 @@ impl DatenLordVolume {
                 vol_name: vol_name.to_owned(),
                 size_bytes: util::EPHEMERAL_VOLUME_STORAGE_CAPACITY,
                 node_id: node_id.to_owned(),
-                worker_port,
                 vol_path: vol_path.to_owned(),
                 ephemeral: true, // ephemeral
             },
@@ -1400,7 +1400,6 @@ impl DatenLordVolume {
         req: &CreateVolumeRequest,
         vol_id: &str,
         node_id: &str,
-        worker_port: u16,
         vol_path: &Path,
     ) -> anyhow::Result<Self> {
         Self::new(
@@ -1409,7 +1408,6 @@ impl DatenLordVolume {
                 vol_name: req.get_name().to_owned(),
                 size_bytes: req.get_capacity_range().get_required_bytes(),
                 node_id: node_id.to_owned(),
-                worker_port,
                 vol_path: vol_path.to_owned(),
                 ephemeral: false,
             },
@@ -1460,26 +1458,6 @@ impl DatenLordVolume {
     }
 }
 
-/// `DatenLordSnapshot` new parameter
-pub struct DatenLordSnapshotParam {
-    /// Snapshot name
-    pub snap_name: String,
-    /// Snapshto ID
-    pub snap_id: String,
-    /// The source volume ID of the snapshot
-    pub vol_id: String,
-    /// The ID of the node the snapshot stored at
-    pub node_id: String,
-    /// The port of worker service
-    pub worker_port: u16,
-    /// Snapshot path
-    pub snap_path: PathBuf,
-    /// Snapshot creation time
-    pub creation_time: std::time::SystemTime,
-    /// Snapshot size in bytes
-    pub size_bytes: i64,
-}
-
 /// Snapshot
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DatenLordSnapshot {
@@ -1491,8 +1469,6 @@ pub struct DatenLordSnapshot {
     pub vol_id: String,
     /// The ID of the node the snapshot stored at
     pub node_id: String,
-    /// The port of worker service
-    pub worker_port: u16,
     /// Snapshot path
     pub snap_path: PathBuf,
     /// Snapshot creation time
@@ -1505,25 +1481,28 @@ pub struct DatenLordSnapshot {
 
 impl DatenLordSnapshot {
     /// Create `DatenLordSnapshot`
-    pub fn new(param: DatenLordSnapshotParam) -> Self {
-        assert!(!param.snap_id.is_empty(), "snapshot ID cannot be empty");
-        assert!(!param.snap_name.is_empty(), "snapshot name cannot be empty");
-        assert!(!param.vol_id.is_empty(), "source volume ID cannot be empty");
-        assert!(!param.node_id.is_empty(), "node ID cannot be empty");
-        assert!(
-            param.size_bytes >= 0,
-            "invalid snapshot size: {}",
-            param.size_bytes
-        );
+    pub fn new(
+        snap_name: String,
+        snap_id: String,
+        vol_id: String,
+        node_id: String,
+        snap_path: PathBuf,
+        creation_time: std::time::SystemTime,
+        size_bytes: i64,
+    ) -> Self {
+        assert!(!snap_id.is_empty(), "snapshot ID cannot be empty");
+        assert!(!snap_name.is_empty(), "snapshot name cannot be empty");
+        assert!(!vol_id.is_empty(), "source volume ID cannot be empty");
+        assert!(!node_id.is_empty(), "node ID cannot be empty");
+        assert!(size_bytes >= 0, "invalid snapshot size: {}", size_bytes);
         Self {
-            snap_name: param.snap_name,
-            snap_id: param.snap_id,
-            vol_id: param.vol_id,
-            node_id: param.node_id,
-            worker_port: param.worker_port,
-            snap_path: param.snap_path,
-            creation_time: param.creation_time,
-            size_bytes: param.size_bytes,
+            snap_name,
+            snap_id,
+            vol_id,
+            node_id,
+            snap_path,
+            creation_time,
+            size_bytes,
             ready_to_use: true, // TODO: check whether the snapshot is ready to use or not
         }
     }

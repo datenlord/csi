@@ -111,7 +111,6 @@ impl Worker for WorkerImpl {
             &req,
             &vol_id_str,
             self.meta_data.get_node_id(),
-            self.meta_data.get_worker_port(),
             &self.meta_data.get_volume_path(&vol_id_str),
         );
         let volume = match vol_res {
