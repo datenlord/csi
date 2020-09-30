@@ -457,7 +457,11 @@ impl Controller for ControllerImpl {
         if let Some(vol) = vol_res {
             let node_res = self.meta_data.get_node_by_id(&vol.node_id);
             if let Some(node) = node_res {
+<<<<<<< HEAD
                 let client = MetaData::build_worker_client(&node);
+=======
+                let client = MetaData::build_worker_client(&vol.node_id, node.worker_port);
+>>>>>>> 1527d9b... Remove work port and clean code style
                 let worker_delete_res = client.worker_delete_volume(&req);
                 match worker_delete_res {
                     Ok(_) => info!("successfully deleted volume ID={}", vol_id),
@@ -700,7 +704,11 @@ impl Controller for ControllerImpl {
             Some(src_vol) => {
                 let node_res = self.meta_data.get_node_by_id(&src_vol.node_id);
                 if let Some(node) = node_res {
+<<<<<<< HEAD
                     let client = MetaData::build_worker_client(&node);
+=======
+                    let client = MetaData::build_worker_client(&src_vol.node_id, node.worker_port);
+>>>>>>> 1527d9b... Remove work port and clean code style
                     let create_res = client.worker_create_snapshot(&req);
                     match create_res {
                         Ok(r) => util::success(&ctx, sink, r),
@@ -712,7 +720,14 @@ impl Controller for ControllerImpl {
                         ),
                     }
                 } else {
+<<<<<<< HEAD
                     warn!("failed to find node ID={} from etcd", src_vol.node_id);
+=======
+                    warn!(
+                        "failed to find node ID={} to get work port",
+                        src_vol.node_id
+                    );
+>>>>>>> 1527d9b... Remove work port and clean code style
                 }
             }
             None => util::fail(
@@ -758,7 +773,11 @@ impl Controller for ControllerImpl {
         if let Some(snap) = snap_res {
             let node_res = self.meta_data.get_node_by_id(&snap.node_id);
             if let Some(node) = node_res {
+<<<<<<< HEAD
                 let client = MetaData::build_worker_client(&node);
+=======
+                let client = MetaData::build_worker_client(&snap.node_id, node.worker_port);
+>>>>>>> 1527d9b... Remove work port and clean code style
                 let worker_delete_res = client.worker_delete_snapshot(&req);
                 match worker_delete_res {
                     Ok(_r) => info!("successfully deleted sanpshot ID={}", snap_id),

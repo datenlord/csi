@@ -133,8 +133,8 @@ fn build_grpc_worker_server(worker_port: u16, meta_data: Arc<MetaData>) -> anyho
     } else {
         ("0.0.0.0", worker_port) // Public worker service
     };
-    let md = Arc::new(meta_data);
-    let worker_service = datenlord_worker_grpc::create_worker(WorkerImpl::new(md));
+
+    let worker_service = datenlord_worker_grpc::create_worker(WorkerImpl::new(meta_data));
     let worker_server = grpcio::ServerBuilder::new(Arc::new(Environment::new(1)))
         .register_service(worker_service)
         .bind(worker_bind_address, worker_bind_port)
@@ -577,7 +577,6 @@ mod test {
             vol_id,
             "ephemeral-volume", // vol_name
             util::DEFAULT_NODE_NAME,
-            util::DEFAULT_PORT,
             meta_data.get_volume_path(NODE_PUBLISH_VOLUME_ID).as_path(), // vol_path
         )?;
         let add_vol_res = meta_data.add_volume_meta_data(vol_id, &volume);
@@ -620,16 +619,15 @@ mod test {
         );
 
         let snap_id = "the-fake-snapshot-id-for-meta-data-test";
-        let snapshot = meta_data::DatenLordSnapshot::new(meta_data::DatenLordSnapshotParam {
-            snap_name: "test-snapshot-name".to_owned(), //snap_name,
-            snap_id: snap_id.to_owned(),                //snap_id,
-            vol_id: vol_id.to_owned(),
-            node_id: meta_data.get_node_id().to_owned(),
-            worker_port: meta_data.get_worker_port(),
-            snap_path: meta_data.get_snapshot_path(snap_id),
-            creation_time: std::time::SystemTime::now(),
-            size_bytes: 0, // size_bytes,
-        });
+        let snapshot = meta_data::DatenLordSnapshot::new(
+            "test-snapshot-name".to_owned(), //snap_name,
+            snap_id.to_owned(),              //snap_id,
+            vol_id.to_owned(),
+            meta_data.get_node_id().to_owned(),
+            meta_data.get_snapshot_path(snap_id),
+            std::time::SystemTime::now(),
+            0, // size_bytes,
+        );
         let add_snap_res = meta_data.add_snapshot_meta_data(snap_id, &snapshot);
         assert!(
             add_snap_res.is_ok(),

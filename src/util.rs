@@ -52,7 +52,7 @@ pub const LOCAL_WORKER_SOCKET: &str = "unix:///tmp/worker.sock";
 pub const BIND_MOUNTER: &str = "target/debug/bind_mounter";
 
 /// The runtime role of CSI plugin
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug)]
 pub enum RunAsRole {
     /// Run both controller and node service
     Both,
