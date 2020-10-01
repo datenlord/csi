@@ -11,6 +11,7 @@ use serde::de::DeserializeOwned;
 use std::ffi::OsStr;
 use std::fmt::Debug;
 use std::fs;
+use std::net::{IpAddr, Ipv4Addr};
 use std::path::Path;
 use std::process::Command;
 use utilities::Cast;
@@ -46,6 +47,8 @@ pub const EPHEMERAL_KEY_CONTEXT: &str = "csi.storage.k8s.io/ephemeral";
 pub const MAX_VOLUMES_PER_NODE: i32 = 256;
 /// Default node name, should read from input argument
 pub const DEFAULT_NODE_NAME: &str = "localhost"; // TODO: to remove
+/// Default node ip, should read from input argument
+pub const DEFAULT_NODE_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)); // TODO: to remove
 /// The socket file to be binded by worker service
 pub const LOCAL_WORKER_SOCKET: &str = "unix:///tmp/worker.sock";
 /// The path to bind mount helper command

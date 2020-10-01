@@ -102,12 +102,14 @@ use anyhow::Context;
 use clap::{App, Arg, ArgMatches};
 use grpcio::{Environment, Server};
 use log::{debug, info};
+use std::net::IpAddr;
 use std::sync::Arc;
 
 /// Build meta data
 fn build_meta_data(
     worker_port: u16,
     node_id: String,
+    ip_address: IpAddr,
     data_dir: String,
     run_as: RunAsRole,
     etcd_client: EtcdClient,
@@ -115,6 +117,7 @@ fn build_meta_data(
     let ephemeral = false; // TODO: read from command line argument
     let node = DatenLordNode::new(
         node_id,
+        ip_address,
         worker_port,
         util::MAX_VOLUME_STORAGE_CAPACITY,
         util::MAX_VOLUMES_PER_NODE,
@@ -123,15 +126,18 @@ fn build_meta_data(
 }
 
 /// Build worker service
-fn build_grpc_worker_server(worker_port: u16, meta_data: Arc<MetaData>) -> anyhow::Result<Server> {
+fn build_grpc_worker_server(meta_data: Arc<MetaData>) -> anyhow::Result<Server> {
     remove_socket_file(util::LOCAL_WORKER_SOCKET);
 
-    let (worker_bind_address, worker_bind_port) = if worker_port == 0 {
+    let node = meta_data.get_node();
+    let ip_address: &str = &node.ip_address.to_string();
+
+    let (worker_bind_address, worker_bind_port) = if node.worker_port == 0 {
         // In this case, worker server won't be public,
         // bind worker service at a socket file and port as 0
         (util::LOCAL_WORKER_SOCKET, 0) // Non-public worker service
     } else {
-        ("0.0.0.0", worker_port) // Public worker service
+        (ip_address, node.worker_port) // Public worker service
     };
 
     let worker_service = datenlord_worker_grpc::create_worker(WorkerImpl::new(meta_data));
@@ -267,6 +273,22 @@ fn run_async_node_servers(node_server: Server, worker_server: Server) {
     });
 }
 
+/// Get ip address of node
+fn get_ip_of_node(node_id: &str) -> IpAddr {
+    if node_id == util::DEFAULT_NODE_NAME {
+        util::DEFAULT_NODE_IP
+    } else {
+        let interfaces = match get_if_addrs::get_if_addrs() {
+            Ok(intf) => intf,
+            Err(_) => return util::DEFAULT_NODE_IP,
+        };
+        match interfaces.iter().find(|x| x.name == "eth0") {
+            Some(intf) => intf.ip(),
+            None => util::DEFAULT_NODE_IP,
+        }
+    }
+}
+
 /// Argument name of end point
 const END_POINT_ARG_NAME: &str = "endpoint";
 /// Argument name of worker port
@@ -318,8 +340,8 @@ fn parse_args() -> ArgMatches<'static> {
                 .takes_value(true)
                 .required(true)
                 .help(
-                    "Set the name/address of the node, \
-                        should be a real host name or network address, \
+                    "Set the name of the node, \
+                        should be a real host name, \
                         required argument, no default value",
                 ),
         )
@@ -400,6 +422,9 @@ fn main() -> anyhow::Result<()> {
         Some(n) => n.to_owned(),
         None => util::DEFAULT_NODE_NAME.to_owned(),
     };
+
+    let ip_address = get_ip_of_node(&node_id);
+
     let driver_name = match matches.value_of(DRIVER_NAME_ARG_NAME) {
         Some(d) => d.to_owned(),
         None => util::CSI_PLUGIN_NAME.to_owned(),
@@ -425,13 +450,15 @@ fn main() -> anyhow::Result<()> {
         None => Vec::new(),
     };
     debug!(
-        "{}={}, {}={}, {}={}, {}={}, {}={}, {}={:?}, {}={:?}",
+        "{}={}, {}={}, {}={}, {}={}, {}={}, {}={}, {}={:?}, {}={:?}",
         END_POINT_ARG_NAME,
         end_point,
         WORKER_PORT_ARG_NAME,
         worker_port,
         NODE_ID_ARG_NAME,
         node_id,
+        "nodeip",
+        ip_address,
         DRIVER_NAME_ARG_NAME,
         driver_name,
         DATA_DIR_ARG_NAME,
@@ -443,7 +470,14 @@ fn main() -> anyhow::Result<()> {
     );
 
     let etcd_client = EtcdClient::new(etcd_address_vec)?;
-    let meta_data = build_meta_data(worker_port, node_id, data_dir, run_as, etcd_client)?;
+    let meta_data = build_meta_data(
+        worker_port,
+        node_id,
+        ip_address,
+        data_dir,
+        run_as,
+        etcd_client,
+    )?;
     let md = Arc::new(meta_data);
     let async_server = false;
     if let RunAsRole::Controller = run_as {
@@ -455,7 +489,7 @@ fn main() -> anyhow::Result<()> {
             run_sync_controller_server(controller_server);
         }
     } else {
-        let worker_server = build_grpc_worker_server(worker_port, Arc::<MetaData>::clone(&md))?;
+        let worker_server = build_grpc_worker_server(Arc::<MetaData>::clone(&md))?;
         let node_server = build_grpc_node_server(&end_point, &driver_name, md)?;
         if async_server {
             run_async_node_servers(node_server, worker_server);
@@ -554,11 +588,13 @@ mod test {
 
         let worker_port = 50051;
         let node_id = util::DEFAULT_NODE_NAME;
+        let ip_address = util::DEFAULT_NODE_IP;
         let data_dir = util::DATA_DIR;
         let run_as = RunAsRole::Both;
         let ephemeral = false;
         let node = DatenLordNode::new(
             node_id.to_owned(),
+            ip_address.to_owned(),
             worker_port,
             util::MAX_VOLUME_STORAGE_CAPACITY,
             util::MAX_VOLUMES_PER_NODE,
@@ -671,6 +707,7 @@ mod test {
         let node_end_point = NODE_END_POINT.to_owned();
         let worker_port = 0;
         let node_id = util::DEFAULT_NODE_NAME.to_owned();
+        let ip_address = util::DEFAULT_NODE_IP.to_owned();
         let driver_name = util::CSI_PLUGIN_NAME.to_owned();
         let data_dir = util::DATA_DIR.to_owned();
         let run_as = RunAsRole::Both;
@@ -685,11 +722,17 @@ mod test {
                 "failed to clear test data, the error is: {}",
                 clear_res.unwrap_err(),
             );
-            let meta_data =
-                match build_meta_data(worker_port, node_id, data_dir, run_as, etcd_client) {
-                    Ok(md) => md,
-                    Err(e) => panic!("failed to build meta data, the error is : {}", e,),
-                };
+            let meta_data = match build_meta_data(
+                worker_port,
+                node_id,
+                ip_address,
+                data_dir,
+                run_as,
+                etcd_client,
+            ) {
+                Ok(md) => md,
+                Err(e) => panic!("failed to build meta data, the error is : {}", e,),
+            };
             let md = Arc::new(meta_data);
             let controller_server = match build_grpc_controller_server(
                 &controller_end_point,
@@ -707,7 +750,7 @@ mod test {
                 Ok(server) => server,
                 Err(e) => panic!("failed to build Node server, the error is : {}", e,),
             };
-            let worker_server = match build_grpc_worker_server(worker_port, md) {
+            let worker_server = match build_grpc_worker_server(md) {
                 Ok(server) => server,
                 Err(e) => panic!("failed to build Worker server, the error is : {}", e,),
             };
