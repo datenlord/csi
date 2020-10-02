@@ -219,12 +219,25 @@ fn run_single_server_helper(srv: &mut Server) {
 }
 
 /// Run Controller server
-fn run_controller_server(mut controller_server: Server) {
+fn run_sync_controller_server(mut controller_server: Server) {
     run_single_server_helper(&mut controller_server);
 
     loop {
         std::thread::park();
     }
+}
+
+/// Run Controller server asynchronuously
+fn run_async_controller_server(controller_server: Server) {
+    /// The future to run `gRPC` server
+    async fn run_server(mut controller_server: Server) {
+        run_single_server_helper(&mut controller_server);
+        let f = futures::future::pending::<()>();
+        f.await;
+    }
+    smol::run(async move {
+        run_server(controller_server).await;
+    });
 }
 
 /// Run Node server synchronuously
@@ -428,14 +441,18 @@ fn main() -> anyhow::Result<()> {
     let etcd_client = EtcdClient::new(etcd_address_vec)?;
     let meta_data = build_meta_data(worker_port, node_id, data_dir, run_as, etcd_client)?;
     let md = Arc::new(meta_data);
+    let async_server = false;
     if let RunAsRole::Controller = run_as {
         let controller_server =
             build_grpc_controller_servers(&end_point, &driver_name, Arc::<MetaData>::clone(&md))?;
-        run_controller_server(controller_server);
+        if async_server {
+            run_async_controller_server(controller_server);
+        } else {
+            run_sync_controller_server(controller_server);
+        }
     } else {
         let worker_server = build_grpc_worker_servers(worker_port, Arc::<MetaData>::clone(&md))?;
         let node_server = build_grpc_node_servers(&end_point, &driver_name, md)?;
-        let async_server = false;
         if async_server {
             run_async_node_servers(node_server, worker_server);
         } else {
@@ -480,7 +497,7 @@ mod test {
     const DEFAULT_ETCD_ENDPOINT_FOR_TEST: &str = "http://127.0.0.1:2379";
     const ETCD_ENV_VAR_KEY: &str = "ETCD_END_POINT";
     /// The csi server socket file to communicate with K8S CSI sidecars
-    const END_POINT: &str = "unix:///tmp/csi.sock";
+    const CONTROLLER_END_POINT: &str = "unix:///tmp/csi.sock";
     /// The node server socket file to communicate with K8S CSI sidecars
     const NODE_END_POINT: &str = "unix:///tmp/node.sock";
     // const WORKER_PORT_ENV_VAR_KEY: &str = "WORKER_PORT";
@@ -645,8 +662,8 @@ mod test {
         Path::new(util::DATA_DIR).join(vol_id)
     }
 
-    fn run_server() -> anyhow::Result<()> {
-        let end_point = END_POINT.to_owned();
+    fn run_test_server() -> anyhow::Result<()> {
+        let end_point = CONTROLLER_END_POINT.to_owned();
         let node_end_point = NODE_END_POINT.to_owned();
         let worker_port = 0;
         let node_id = util::DEFAULT_NODE_NAME.to_owned();
@@ -670,7 +687,7 @@ mod test {
                     Err(e) => panic!("failed to build meta data, the error is : {}", e,),
                 };
             let md = Arc::new(meta_data);
-            let mut controller_server = match build_grpc_controller_servers(
+            let controller_server = match build_grpc_controller_servers(
                 &end_point,
                 &driver_name,
                 Arc::<MetaData>::clone(&md),
@@ -678,7 +695,7 @@ mod test {
                 Ok(server) => server,
                 Err(e) => panic!("failed to build CSI server, the error is : {}", e,),
             };
-            let mut node_server = match build_grpc_node_servers(
+            let node_server = match build_grpc_node_servers(
                 &node_end_point,
                 &driver_name,
                 Arc::<MetaData>::clone(&md),
@@ -686,7 +703,7 @@ mod test {
                 Ok(server) => server,
                 Err(e) => panic!("failed to build Node server, the error is : {}", e,),
             };
-            let mut worker_server = match build_grpc_worker_servers(worker_port, md) {
+            let worker_server = match build_grpc_worker_servers(worker_port, md) {
                 Ok(server) => server,
                 Err(e) => panic!("failed to build Worker server, the error is : {}", e,),
             };
@@ -694,16 +711,17 @@ mod test {
             // Keep running the task in the background
             let _th = thread::spawn(move || {
                 if async_server {
-                    // TODO: Run servers async.
-                    //run_async_servers(csi_server, node_server);
+                    run_async_controller_and_node_servers(
+                        controller_server,
+                        node_server,
+                        worker_server,
+                    );
                 } else {
-                    run_single_server_helper(&mut controller_server);
-                    run_single_server_helper(&mut worker_server);
-                    run_single_server_helper(&mut node_server);
-
-                    loop {
-                        std::thread::park();
-                    }
+                    run_sync_controller_and_node_servers(
+                        controller_server,
+                        node_server,
+                        worker_server,
+                    );
                 }
             });
         });
@@ -711,10 +729,46 @@ mod test {
         Ok(())
     }
 
+    fn run_sync_controller_and_node_servers(
+        mut controller_server: Server,
+        mut node_server: Server,
+        mut worker_server: Server,
+    ) {
+        run_single_server_helper(&mut controller_server);
+        run_single_server_helper(&mut node_server);
+        run_single_server_helper(&mut worker_server);
+
+        loop {
+            std::thread::park();
+        }
+    }
+
+    fn run_async_controller_and_node_servers(
+        controller_server: Server,
+        node_server: Server,
+        worker_server: Server,
+    ) {
+        /// The future to run `gRPC` server
+        async fn run_server(
+            mut controller_server: Server,
+            mut node_server: Server,
+            mut worker_server: Server,
+        ) {
+            run_single_server_helper(&mut controller_server);
+            run_single_server_helper(&mut node_server);
+            run_single_server_helper(&mut worker_server);
+            let f = futures::future::pending::<()>();
+            f.await;
+        }
+        smol::run(async move {
+            run_server(controller_server, node_server, worker_server).await;
+        });
+    }
+
     fn build_identity_client() -> anyhow::Result<IdentityClient> {
-        run_server()?;
+        run_test_server()?;
         let env = Arc::new(EnvBuilder::new().build());
-        let ch = ChannelBuilder::new(env).connect(END_POINT);
+        let ch = ChannelBuilder::new(env).connect(CONTROLLER_END_POINT);
         let identity_client = IdentityClient::new(ch);
         Ok(identity_client)
     }
@@ -768,9 +822,9 @@ mod test {
     }
 
     fn build_controller_client() -> anyhow::Result<ControllerClient> {
-        run_server()?;
+        run_test_server()?;
         let env = Arc::new(EnvBuilder::new().build());
-        let ch = ChannelBuilder::new(env).connect(END_POINT);
+        let ch = ChannelBuilder::new(env).connect(CONTROLLER_END_POINT);
         let controller_client = ControllerClient::new(ch);
         Ok(controller_client)
     }
@@ -1415,7 +1469,7 @@ mod test {
     }
 
     fn build_node_client() -> anyhow::Result<NodeClient> {
-        run_server()?;
+        run_test_server()?;
         let env = Arc::new(EnvBuilder::new().build());
         let ch = ChannelBuilder::new(env).connect(NODE_END_POINT);
         let node_client = NodeClient::new(ch);
