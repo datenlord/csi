@@ -525,7 +525,7 @@ impl MetaData {
         info!("adding the meta data of snapshot ID={}", snap_id);
         let snap_id_str = snap_id.to_owned();
 
-        // TODO: use etcd transancation?
+    // TODO: use etcd transancation?
         let snap_id_key = format!("{}/{}", SNAPSHOT_ID_PREFIX, snap_id);
         self.etcd_client
             .write_new_kv(&snap_id_key, snapshot)
@@ -565,7 +565,7 @@ impl MetaData {
     pub fn delete_snapshot_meta_data(&self, snap_id: &str) -> anyhow::Result<DatenLordSnapshot> {
         info!("deleting the meta data of snapshot ID={}", snap_id);
 
-        // TODO: use etcd transancation?
+    // TODO: use etcd transancation?
         let snap_id_key = format!("{}/{}", SNAPSHOT_ID_PREFIX, snap_id);
         let snap_id_pre_value: DatenLordSnapshot =
             self.etcd_client.delete_exact_one_value(&snap_id_key)?;
@@ -620,7 +620,7 @@ impl MetaData {
             vol_name_key,
         );
 
-        // Volume ephemeral field cannot be changed
+    // Volume ephemeral field cannot be changed
         let node_vol_key = format!("{}/{}/{}", NODE_VOLUME_PREFIX, volume.node_id, vol_id);
         let node_vol_pre_value = self
             .etcd_client
@@ -674,7 +674,7 @@ impl MetaData {
     pub fn delete_volume_meta_data(&self, vol_id: &str) -> anyhow::Result<DatenLordVolume> {
         info!("deleting volume ID={}", vol_id);
 
-        // TODO: use etcd transancation?
+    // TODO: use etcd transancation?
         let vol_id_key = format!("{}/{}", VOLUME_ID_PREFIX, vol_id);
         let vol_id_pre_value: DatenLordVolume =
             self.etcd_client.delete_exact_one_value(&vol_id_key)?;
@@ -846,7 +846,7 @@ impl MetaData {
                 let copy_res = util::copy_directory_recursively(
                     &src_volume.vol_path,
                     &dst_path,
-                    false, // follow symlink or not
+false, // follow symlink or not
                 );
                 match copy_res {
                     Ok(copy_size) => {
@@ -860,7 +860,7 @@ impl MetaData {
                             RpcStatusCode::INTERNAL,
                             format!(
                                 "failed to pre-populate data from source mount volume {} and name={}, \
-                                    the error is: {}", 
+                                    the error is: {}",
                                 src_volume.vol_id,
                                 src_volume.vol_name,
                                 e,
@@ -894,7 +894,7 @@ impl MetaData {
             );
             mount_path_set.remove(mount_path);
             if mount_path_set.is_empty() {
-                // Delete the last mount path
+    // Delete the last mount path
                 self.delete_volume_all_bind_mount_path(vol_id)
             } else {
                 let mount_path_value_in_etcd = mount_path_set
@@ -1036,7 +1036,7 @@ impl MetaData {
         ephemeral: bool,
     ) -> (RpcStatusCode, String) {
         let vol_path = self.get_volume_path(vol_id);
-        // Bind mount from target_path to vol_path if run as root
+    // Bind mount from target_path to vol_path if run as root
         let target_path = Path::new(target_dir);
         if target_path.exists() {
             debug!("found target bind mount directory={:?}", target_path);
