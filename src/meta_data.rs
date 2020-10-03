@@ -2,7 +2,7 @@
 
 use anyhow::{anyhow, Context};
 use grpcio::{ChannelBuilder, Environment, RpcStatusCode};
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -138,13 +138,13 @@ impl MetaData {
     }
 
     /// Build `gRPC` client to `DatenLord` worker
-    pub fn build_worker_client(node_id: &str, worker_port: u16) -> WorkerClient {
+    pub fn build_worker_client(node: &DatenLordNode) -> WorkerClient {
         // let env = Arc::new(EnvBuilder::new().build());
         let env = Arc::new(Environment::new(1));
-        let work_address = if worker_port == 0 {
+        let work_address = if node.worker_port == 0 {
             util::LOCAL_WORKER_SOCKET.to_string()
         } else {
-            format!("{}:{}", node_id, worker_port)
+            format!("{}:{}", node.node_id, node.worker_port)
         };
         let ch = ChannelBuilder::new(env).connect(&work_address);
         let client = WorkerClient::new(ch);
@@ -234,7 +234,7 @@ impl MetaData {
         match get_res {
             Ok(val) => val,
             Err(e) => {
-                debug!("failed to get snapshot ID={}, the error is: {}", snap_id, e);
+                warn!("failed to get snapshot ID={}, the error is: {}", snap_id, e);
                 None
             }
         }

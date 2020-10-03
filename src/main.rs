@@ -123,7 +123,7 @@ fn build_meta_data(
 }
 
 /// Build worker service
-fn build_grpc_worker_servers(worker_port: u16, meta_data: Arc<MetaData>) -> anyhow::Result<Server> {
+fn build_grpc_worker_server(worker_port: u16, meta_data: Arc<MetaData>) -> anyhow::Result<Server> {
     remove_socket_file(util::LOCAL_WORKER_SOCKET);
 
     let (worker_bind_address, worker_bind_port) = if worker_port == 0 {
@@ -146,7 +146,7 @@ fn build_grpc_worker_servers(worker_port: u16, meta_data: Arc<MetaData>) -> anyh
 }
 
 /// Build node service
-fn build_grpc_node_servers(
+fn build_grpc_node_server(
     end_point: &str,
     driver_name: &str,
     meta_data: Arc<MetaData>,
@@ -170,7 +170,7 @@ fn build_grpc_node_servers(
 }
 
 /// Build controller service
-fn build_grpc_controller_servers(
+fn build_grpc_controller_server(
     end_point: &str,
     driver_name: &str,
     meta_data: Arc<MetaData>,
@@ -390,7 +390,7 @@ fn main() -> anyhow::Result<()> {
             Ok(port) => port,
             Err(e) => panic!("failed to parse port, the error is: {}", e),
         },
-        None => util::DEFAULT_PORT,
+        None => panic!("No valid worker port"),
     };
     let node_id = match matches.value_of(NODE_ID_ARG_NAME) {
         Some(n) => n.to_owned(),
@@ -444,15 +444,15 @@ fn main() -> anyhow::Result<()> {
     let async_server = false;
     if let RunAsRole::Controller = run_as {
         let controller_server =
-            build_grpc_controller_servers(&end_point, &driver_name, Arc::<MetaData>::clone(&md))?;
+            build_grpc_controller_server(&end_point, &driver_name, Arc::<MetaData>::clone(&md))?;
         if async_server {
             run_async_controller_server(controller_server);
         } else {
             run_sync_controller_server(controller_server);
         }
     } else {
-        let worker_server = build_grpc_worker_servers(worker_port, Arc::<MetaData>::clone(&md))?;
-        let node_server = build_grpc_node_servers(&end_point, &driver_name, md)?;
+        let worker_server = build_grpc_worker_server(worker_port, Arc::<MetaData>::clone(&md))?;
+        let node_server = build_grpc_node_server(&end_point, &driver_name, md)?;
         if async_server {
             run_async_node_servers(node_server, worker_server);
         } else {
@@ -548,7 +548,7 @@ mod test {
         let etcd_client = EtcdClient::new(etcd_address_vec)?;
         clear_test_data(&etcd_client)?;
 
-        let worker_port = util::DEFAULT_PORT;
+        let worker_port = 50051;
         let node_id = util::DEFAULT_NODE_NAME;
         let data_dir = util::DATA_DIR;
         let run_as = RunAsRole::Both;
@@ -663,7 +663,7 @@ mod test {
     }
 
     fn run_test_server() -> anyhow::Result<()> {
-        let end_point = CONTROLLER_END_POINT.to_owned();
+        let controller_end_point = CONTROLLER_END_POINT.to_owned();
         let node_end_point = NODE_END_POINT.to_owned();
         let worker_port = 0;
         let node_id = util::DEFAULT_NODE_NAME.to_owned();
@@ -687,15 +687,15 @@ mod test {
                     Err(e) => panic!("failed to build meta data, the error is : {}", e,),
                 };
             let md = Arc::new(meta_data);
-            let controller_server = match build_grpc_controller_servers(
-                &end_point,
+            let controller_server = match build_grpc_controller_server(
+                &controller_end_point,
                 &driver_name,
                 Arc::<MetaData>::clone(&md),
             ) {
                 Ok(server) => server,
                 Err(e) => panic!("failed to build CSI server, the error is : {}", e,),
             };
-            let node_server = match build_grpc_node_servers(
+            let node_server = match build_grpc_node_server(
                 &node_end_point,
                 &driver_name,
                 Arc::<MetaData>::clone(&md),
@@ -703,7 +703,7 @@ mod test {
                 Ok(server) => server,
                 Err(e) => panic!("failed to build Node server, the error is : {}", e,),
             };
-            let worker_server = match build_grpc_worker_servers(worker_port, md) {
+            let worker_server = match build_grpc_worker_server(worker_port, md) {
                 Ok(server) => server,
                 Err(e) => panic!("failed to build Worker server, the error is : {}", e,),
             };
