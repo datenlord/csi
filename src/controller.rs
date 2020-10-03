@@ -455,25 +455,9 @@ impl Controller for ControllerImpl {
         // Do not return gRPC error when delete failed for idempotency
         let vol_res = self.meta_data.get_volume_by_id(vol_id);
         if let Some(vol) = vol_res {
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
             let node_res = self.meta_data.get_node_by_id(&vol.node_id);
             if let Some(node) = node_res {
-<<<<<<< HEAD
-<<<<<<< HEAD
                 let client = MetaData::build_worker_client(&node);
-=======
-                let client = MetaData::build_worker_client(&vol.node_id, node.worker_port);
->>>>>>> 1527d9b... Remove work port and clean code style
-=======
-                let client = MetaData::build_worker_client(&node);
->>>>>>> 4ed387b... Fixing the name issue and pass node when building worker client
-=======
-            let node_res = self.meta_data.get_node_by_id(&vol.node_id);
-            if let Some(node) = node_res {
-                let client = MetaData::build_worker_client(&vol.node_id, node.worker_port);
->>>>>>> 1527d9b... Remove work port and clean code style
                 let worker_delete_res = client.worker_delete_volume(&req);
                 match worker_delete_res {
                     Ok(_) => info!("successfully deleted volume ID={}", vol_id),
@@ -483,25 +467,6 @@ impl Controller for ControllerImpl {
                             vol_id, vol.node_id, e,
                         );
                     }
-<<<<<<< HEAD
-=======
-            let client = self
-                .meta_data
-                .build_worker_client(&vol.node_id, vol.worker_port);
-=======
-            let client = MetaData::build_worker_client(&vol.node_id, vol.worker_port);
->>>>>>> bc3c8dd... Change github workflows
-            let worker_delete_res = client.worker_delete_volume(&req);
-            match worker_delete_res {
-                Ok(_) => info!("successfully deleted volume ID={}", vol_id),
-                Err(e) => {
-                    warn!(
-                        "failed to delete volume ID={} on node ID={}, the error is: {}",
-                        vol_id, vol.node_id, e,
-                    );
->>>>>>> bf2de55... Refactor node and controller to different server
-=======
->>>>>>> 1527d9b... Remove work port and clean code style
                 }
             } else {
                 warn!("failed to find node ID={} to get work port", vol.node_id);
@@ -733,16 +698,9 @@ impl Controller for ControllerImpl {
 
         match self.meta_data.get_volume_by_id(src_vol_id) {
             Some(src_vol) => {
-<<<<<<< HEAD
-<<<<<<< HEAD
                 let node_res = self.meta_data.get_node_by_id(&src_vol.node_id);
                 if let Some(node) = node_res {
                     let client = MetaData::build_worker_client(&node);
-=======
-                let node_res = self.meta_data.get_node_by_id(&src_vol.node_id);
-                if let Some(node) = node_res {
-                    let client = MetaData::build_worker_client(&src_vol.node_id, node.worker_port);
->>>>>>> 1527d9b... Remove work port and clean code style
                     let create_res = client.worker_create_snapshot(&req);
                     match create_res {
                         Ok(r) => util::success(&ctx, sink, r),
@@ -754,26 +712,7 @@ impl Controller for ControllerImpl {
                         ),
                     }
                 } else {
-<<<<<<< HEAD
                     warn!("failed to find node ID={} from etcd", src_vol.node_id);
-=======
-                let client = MetaData::build_worker_client(&src_vol.node_id, src_vol.worker_port);
-                let create_res = client.worker_create_snapshot(&req);
-                match create_res {
-                    Ok(r) => util::success(&ctx, sink, r),
-                    Err(e) => util::fail(
-                        &ctx,
-                        sink,
-                        RpcStatusCode::INTERNAL,
-                        format!("failed to create snapshot, the error is: {}", e),
-                    ),
->>>>>>> bc3c8dd... Change github workflows
-=======
-                    warn!(
-                        "failed to find node ID={} to get work port",
-                        src_vol.node_id
-                    );
->>>>>>> 1527d9b... Remove work port and clean code style
                 }
             }
             None => util::fail(
@@ -817,25 +756,9 @@ impl Controller for ControllerImpl {
         // Do not return gRPC error when delete failed for idempotency
         let snap_res = self.meta_data.get_snapshot_by_id(snap_id);
         if let Some(snap) = snap_res {
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
             let node_res = self.meta_data.get_node_by_id(&snap.node_id);
             if let Some(node) = node_res {
-<<<<<<< HEAD
-<<<<<<< HEAD
                 let client = MetaData::build_worker_client(&node);
-=======
-                let client = MetaData::build_worker_client(&snap.node_id, node.worker_port);
->>>>>>> 1527d9b... Remove work port and clean code style
-=======
-                let client = MetaData::build_worker_client(&node);
->>>>>>> 4ed387b... Fixing the name issue and pass node when building worker client
-=======
-            let node_res = self.meta_data.get_node_by_id(&snap.node_id);
-            if let Some(node) = node_res {
-                let client = MetaData::build_worker_client(&snap.node_id, node.worker_port);
->>>>>>> 1527d9b... Remove work port and clean code style
                 let worker_delete_res = client.worker_delete_snapshot(&req);
                 match worker_delete_res {
                     Ok(_r) => info!("successfully deleted sanpshot ID={}", snap_id),
@@ -845,25 +768,6 @@ impl Controller for ControllerImpl {
                             snap_id, snap.node_id, e,
                         );
                     }
-<<<<<<< HEAD
-=======
-            let client = self
-                .meta_data
-                .build_worker_client(&snap.node_id, snap.worker_port);
-=======
-            let client = MetaData::build_worker_client(&snap.node_id, snap.worker_port);
->>>>>>> bc3c8dd... Change github workflows
-            let worker_delete_res = client.worker_delete_snapshot(&req);
-            match worker_delete_res {
-                Ok(_r) => info!("successfully deleted sanpshot ID={}", snap_id),
-                Err(e) => {
-                    error!(
-                        "failed to delete snapshot ID={} on node ID={}, the error is: {}",
-                        snap_id, snap.node_id, e,
-                    );
->>>>>>> bf2de55... Refactor node and controller to different server
-=======
->>>>>>> 1527d9b... Remove work port and clean code style
                 }
             } else {
                 warn!("failed to find node ID={} to get work port", snap.node_id);
