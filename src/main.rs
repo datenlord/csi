@@ -142,22 +142,6 @@ fn build_grpc_worker_server(worker_port: u16, meta_data: Arc<MetaData>) -> anyho
         .build()
         .context("failed to build DatenLord worker server")?;
 
-    let worker_service = datenlord_worker_grpc::create_worker(WorkerImpl::new(meta_data));
-    let worker_server = grpcio::ServerBuilder::new(Arc::new(Environment::new(1)))
-        .register_service(worker_service)
-        .bind(worker_bind_address, worker_bind_port)
-        // .channel_args(ch_builder.build_args())
-        .build()
-        .context("failed to build DatenLord worker server")?;
-
-    let worker_service = datenlord_worker_grpc::create_worker(WorkerImpl::new(meta_data));
-    let worker_server = grpcio::ServerBuilder::new(Arc::new(Environment::new(1)))
-        .register_service(worker_service)
-        .bind(worker_bind_address, worker_bind_port)
-        // .channel_args(ch_builder.build_args())
-        .build()
-        .context("failed to build DatenLord worker server")?;
-
     Ok(worker_server)
 }
 
