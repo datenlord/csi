@@ -139,7 +139,7 @@ impl MetaData {
 
     /// Build `gRPC` client to `DatenLord` worker
     pub fn build_worker_client(node: &DatenLordNode) -> WorkerClient {
-        // let env = Arc::new(EnvBuilder::new().build());
+        // TODO: increase concurrent queue size
         let env = Arc::new(Environment::new(1));
         let work_address = if node.worker_port == 0 {
             util::LOCAL_WORKER_SOCKET.to_string()
