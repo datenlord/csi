@@ -135,6 +135,7 @@ fn build_grpc_worker_server(worker_port: u16, meta_data: Arc<MetaData>) -> anyho
     };
 
     let worker_service = datenlord_worker_grpc::create_worker(WorkerImpl::new(meta_data));
+    // TODO: increase concurrent queue size
     let worker_server = grpcio::ServerBuilder::new(Arc::new(Environment::new(1)))
         .register_service(worker_service)
         .bind(worker_bind_address, worker_bind_port)
@@ -158,6 +159,7 @@ fn build_grpc_node_server(
         util::CSI_PLUGIN_VERSION.to_owned(),
     ));
     let node_service = csi_grpc::create_node(NodeImpl::new(meta_data));
+    // TODO: increase concurrent queue size
     let node_server = grpcio::ServerBuilder::new(Arc::new(Environment::new(1)))
         .register_service(identity_service)
         .register_service(node_service)
@@ -187,6 +189,7 @@ fn build_grpc_controller_server(
     // debug_assert!(!overflow, "computing memory size overflowed");
     // let quota = ResourceQuota::new(Some("DatenLordWokerQuota")).resize_memory(mem_size);
     // let ch_builder = ChannelBuilder::new(Arc::<Environment>::clone(&env)).set_resource_quota(quota);
+    // TODO: increase concurrent queue size
     let controller_server = grpcio::ServerBuilder::new(Arc::new(Environment::new(1)))
         .register_service(identity_service)
         .register_service(controller_service)

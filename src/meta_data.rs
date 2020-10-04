@@ -146,6 +146,7 @@ impl MetaData {
         } else {
             format!("{}:{}", node.node_id, node.worker_port)
         };
+        // TODO: increase concurrent queue size
         let ch = ChannelBuilder::new(env).connect(&work_address);
         let client = WorkerClient::new(ch);
         debug!("build worker client to {}", work_address);
