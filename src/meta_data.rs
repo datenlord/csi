@@ -146,7 +146,6 @@ impl MetaData {
         } else {
             format!("{}:{}", node.node_id, node.worker_port)
         };
-        // TODO: increase concurrent queue size
         let ch = ChannelBuilder::new(env).connect(&work_address);
         let client = WorkerClient::new(ch);
         debug!("build worker client to {}", work_address);
@@ -221,7 +220,7 @@ impl MetaData {
         match get_res {
             Ok(val) => val,
             Err(e) => {
-                debug!("failed to get node ID={}, the error is: {}", node_id, e);
+                warn!("failed to get node ID={}, the error is: {}", node_id, e);
                 None
             }
         }
