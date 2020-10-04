@@ -709,60 +709,25 @@ mod test {
             };
 
             // Keep running the task in the background
-            let _th = thread::spawn(move || {
+            let _controller_thread = thread::spawn(move || {
                 if async_server {
-                    run_async_controller_and_node_servers(
-                        controller_server,
-                        node_server,
-                        worker_server,
-                    );
+                    run_async_controller_server(controller_server);
                 } else {
-                    run_sync_controller_and_node_servers(
-                        controller_server,
-                        node_server,
-                        worker_server,
-                    );
+                    run_sync_controller_server(controller_server);
+                }
+            });
+
+            // Keep running the task in the background
+            let _node_thread = thread::spawn(move || {
+                if async_server {
+                    run_async_node_servers(node_server, worker_server);
+                } else {
+                    run_sync_node_servers(node_server, worker_server);
                 }
             });
         });
 
         Ok(())
-    }
-
-    fn run_sync_controller_and_node_servers(
-        mut controller_server: Server,
-        mut node_server: Server,
-        mut worker_server: Server,
-    ) {
-        run_single_server_helper(&mut controller_server);
-        run_single_server_helper(&mut node_server);
-        run_single_server_helper(&mut worker_server);
-
-        loop {
-            std::thread::park();
-        }
-    }
-
-    fn run_async_controller_and_node_servers(
-        controller_server: Server,
-        node_server: Server,
-        worker_server: Server,
-    ) {
-        /// The future to run `gRPC` server
-        async fn run_server(
-            mut controller_server: Server,
-            mut node_server: Server,
-            mut worker_server: Server,
-        ) {
-            run_single_server_helper(&mut controller_server);
-            run_single_server_helper(&mut node_server);
-            run_single_server_helper(&mut worker_server);
-            let f = futures::future::pending::<()>();
-            f.await;
-        }
-        smol::run(async move {
-            run_server(controller_server, node_server, worker_server).await;
-        });
     }
 
     fn build_identity_client() -> anyhow::Result<IdentityClient> {
