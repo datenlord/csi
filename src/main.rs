@@ -304,6 +304,7 @@ fn parse_args() -> ArgMatches<'static> {
                 .long(WORKER_PORT_ARG_NAME)
                 .value_name("PORT")
                 .takes_value(true)
+                .required(true)
                 .help(
                     "Set the port of worker service port, \
                         default value 50051",
