@@ -102,7 +102,8 @@ use anyhow::Context;
 use clap::{App, Arg, ArgMatches};
 use grpcio::{Environment, Server};
 use log::{debug, info};
-use std::net::IpAddr;
+use pnet::datalink;
+use std::net::{IpAddr, ToSocketAddrs};
 use std::sync::Arc;
 
 /// Build meta data
@@ -275,16 +276,24 @@ fn run_async_node_servers(node_server: Server, worker_server: Server) {
 
 /// Get ip address of node
 fn get_ip_of_node(node_id: &str) -> IpAddr {
-    if node_id == util::DEFAULT_NODE_NAME {
-        util::DEFAULT_NODE_IP
+    let hostname = format!("{}:{}", node_id, 0);
+    let sockets = hostname.to_socket_addrs();
+    if let Ok(s) = sockets {
+        let addrs: Vec<_> = s.collect();
+        addrs
+            .get(0)
+            .unwrap_or_else(|| panic!("Failed to get ip address"))
+            .ip()
     } else {
-        let interfaces = match get_if_addrs::get_if_addrs() {
-            Ok(intf) => intf,
-            Err(_) => return util::DEFAULT_NODE_IP,
-        };
-        match interfaces.iter().find(|x| x.name == "eth0") {
-            Some(intf) => intf.ip(),
-            None => util::DEFAULT_NODE_IP,
+        let interfaces = datalink::interfaces();
+        let eth0 = interfaces.iter().find(|i| i.name == "eth0");
+        match eth0 {
+            Some(intf) => intf
+                .ips
+                .first()
+                .unwrap_or_else(|| panic!("Failed to get IP from eth0"))
+                .ip(),
+            None => panic!("Failed to get interface eth0"),
         }
     }
 }
@@ -295,6 +304,8 @@ const END_POINT_ARG_NAME: &str = "endpoint";
 const WORKER_PORT_ARG_NAME: &str = "workerport";
 /// Argument name of node ID
 const NODE_ID_ARG_NAME: &str = "nodeid";
+/// Argument name of node IP
+const NODE_IP_ARG_NAME: &str = "nodeip";
 /// Argument name of driver name
 const DRIVER_NAME_ARG_NAME: &str = "drivername";
 /// Argument name of data directory
@@ -303,6 +314,26 @@ const DATA_DIR_ARG_NAME: &str = "datadir";
 const RUN_AS_ARG_NAME: &str = "runas";
 /// Argument name of etcd addresses
 const ETCD_ADDRESS_ARG_NAME: &str = "etcd";
+
+/// CLI arguments
+struct Arguments {
+    /// End point
+    pub end_point: String,
+    /// Worker port
+    pub worker_port: u16,
+    /// Node ID
+    pub node_id: String,
+    /// Node IP
+    pub ip_address: IpAddr,
+    /// Driver name
+    pub driver_name: String,
+    /// Data dir
+    pub data_dir: String,
+    /// Role name
+    pub run_as: RunAsRole,
+    /// Etcd address
+    pub etcd_address_vec: Vec<String>,
+}
 
 /// Parse command line arguments
 fn parse_args() -> ArgMatches<'static> {
@@ -344,6 +375,13 @@ fn parse_args() -> ArgMatches<'static> {
                         should be a real host name, \
                         required argument, no default value",
                 ),
+        )
+        .arg(
+            Arg::with_name(NODE_IP_ARG_NAME)
+                .long(NODE_IP_ARG_NAME)
+                .value_name("NODE IP")
+                .takes_value(true)
+                .help("Set the ip of the node"),
         )
         .arg(
             Arg::with_name(DRIVER_NAME_ARG_NAME)
@@ -394,10 +432,8 @@ fn parse_args() -> ArgMatches<'static> {
         .get_matches()
 }
 
-fn main() -> anyhow::Result<()> {
-    env_logger::init();
-
-    let matches = parse_args();
+/// Get arguments value
+fn get_args(matches: &ArgMatches) -> Arguments {
     let end_point = match matches.value_of(END_POINT_ARG_NAME) {
         Some(s) => {
             let sock = s.to_owned();
@@ -420,10 +456,13 @@ fn main() -> anyhow::Result<()> {
     };
     let node_id = match matches.value_of(NODE_ID_ARG_NAME) {
         Some(n) => n.to_owned(),
-        None => util::DEFAULT_NODE_NAME.to_owned(),
+        None => panic!("No node id"),
     };
 
-    let ip_address = get_ip_of_node(&node_id);
+    let ip_address = match matches.value_of(NODE_IP_ARG_NAME) {
+        Some(n) => n.parse().unwrap_or_else(|_| panic!("Invalid IP address")),
+        None => get_ip_of_node(&node_id),
+    };
 
     let driver_name = match matches.value_of(DRIVER_NAME_ARG_NAME) {
         Some(d) => d.to_owned(),
@@ -449,40 +488,60 @@ fn main() -> anyhow::Result<()> {
         Some(a) => a.split(',').map(std::borrow::ToOwned::to_owned).collect(),
         None => Vec::new(),
     };
+    Arguments {
+        end_point,
+        worker_port,
+        node_id,
+        ip_address,
+        driver_name,
+        data_dir,
+        run_as,
+        etcd_address_vec,
+    }
+}
+
+fn main() -> anyhow::Result<()> {
+    env_logger::init();
+
+    let matches = parse_args();
+    let args = get_args(&matches);
     debug!(
         "{}={}, {}={}, {}={}, {}={}, {}={}, {}={}, {}={:?}, {}={:?}",
         END_POINT_ARG_NAME,
-        end_point,
+        args.end_point,
         WORKER_PORT_ARG_NAME,
-        worker_port,
+        args.worker_port,
         NODE_ID_ARG_NAME,
-        node_id,
-        "nodeip",
-        ip_address,
+        args.node_id,
+        NODE_IP_ARG_NAME,
+        args.ip_address,
         DRIVER_NAME_ARG_NAME,
-        driver_name,
+        args.driver_name,
         DATA_DIR_ARG_NAME,
-        data_dir,
+        args.data_dir,
         RUN_AS_ARG_NAME,
-        run_as,
+        args.run_as,
         ETCD_ADDRESS_ARG_NAME,
-        etcd_address_vec,
+        args.etcd_address_vec,
     );
 
-    let etcd_client = EtcdClient::new(etcd_address_vec)?;
+    let etcd_client = EtcdClient::new(args.etcd_address_vec)?;
     let meta_data = build_meta_data(
-        worker_port,
-        node_id,
-        ip_address,
-        data_dir,
-        run_as,
+        args.worker_port,
+        args.node_id,
+        args.ip_address,
+        args.data_dir,
+        args.run_as,
         etcd_client,
     )?;
     let md = Arc::new(meta_data);
     let async_server = false;
-    if let RunAsRole::Controller = run_as {
-        let controller_server =
-            build_grpc_controller_server(&end_point, &driver_name, Arc::<MetaData>::clone(&md))?;
+    if let RunAsRole::Controller = args.run_as {
+        let controller_server = build_grpc_controller_server(
+            &args.end_point,
+            &args.driver_name,
+            Arc::<MetaData>::clone(&md),
+        )?;
         if async_server {
             run_async_controller_server(controller_server);
         } else {
@@ -490,7 +549,7 @@ fn main() -> anyhow::Result<()> {
         }
     } else {
         let worker_server = build_grpc_worker_server(Arc::<MetaData>::clone(&md))?;
-        let node_server = build_grpc_node_server(&end_point, &driver_name, md)?;
+        let node_server = build_grpc_node_server(&args.end_point, &args.driver_name, md)?;
         if async_server {
             run_async_node_servers(node_server, worker_server);
         } else {
@@ -523,6 +582,7 @@ mod test {
     use protobuf::RepeatedField;
     use std::fs::{self, File};
     use std::io::prelude::*;
+    use std::net::Ipv4Addr;
     use std::path::{Path, PathBuf};
     use std::sync::Once;
     use std::thread;
@@ -532,6 +592,8 @@ mod test {
     const NODE_PUBLISH_VOLUME_TARGET_PATH_1: &str = "/tmp/target_volume_path_1";
     const NODE_PUBLISH_VOLUME_TARGET_PATH_2: &str = "/tmp/target_volume_path_2";
     const NODE_PUBLISH_VOLUME_ID: &str = "46ebd0ee-0e6d-43c9-b90d-ccc35a913f3e";
+    const DEFAULT_NODE_NAME: &str = "localhost";
+    const DEFAULT_NODE_IP: IpAddr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
     const DEFAULT_ETCD_ENDPOINT_FOR_TEST: &str = "http://127.0.0.1:2379";
     const ETCD_ENV_VAR_KEY: &str = "ETCD_END_POINT";
     /// The csi server socket file to communicate with K8S CSI sidecars
@@ -587,8 +649,8 @@ mod test {
         clear_test_data(&etcd_client)?;
 
         let worker_port = 50051;
-        let node_id = util::DEFAULT_NODE_NAME;
-        let ip_address = util::DEFAULT_NODE_IP;
+        let node_id = DEFAULT_NODE_NAME;
+        let ip_address = DEFAULT_NODE_IP;
         let data_dir = util::DATA_DIR;
         let run_as = RunAsRole::Both;
         let ephemeral = false;
@@ -608,7 +670,7 @@ mod test {
         let mut volume = meta_data::DatenLordVolume::build_ephemeral_volume(
             vol_id,
             "ephemeral-volume", // vol_name
-            util::DEFAULT_NODE_NAME,
+            DEFAULT_NODE_NAME,
             meta_data.get_volume_path(NODE_PUBLISH_VOLUME_ID).as_path(), // vol_path
         )?;
         let add_vol_res = meta_data.add_volume_meta_data(vol_id, &volume);
@@ -645,8 +707,7 @@ mod test {
 
         let selected_node = meta_data.select_node(None)?;
         assert_eq!(
-            selected_node.node_id,
-            util::DEFAULT_NODE_NAME,
+            selected_node.node_id, DEFAULT_NODE_NAME,
             "selected node ID not match"
         );
 
@@ -706,8 +767,8 @@ mod test {
         let controller_end_point = CONTROLLER_END_POINT.to_owned();
         let node_end_point = NODE_END_POINT.to_owned();
         let worker_port = 0;
-        let node_id = util::DEFAULT_NODE_NAME.to_owned();
-        let ip_address = util::DEFAULT_NODE_IP.to_owned();
+        let node_id = DEFAULT_NODE_NAME.to_owned();
+        let ip_address = DEFAULT_NODE_IP.to_owned();
         let driver_name = util::CSI_PLUGIN_NAME.to_owned();
         let data_dir = util::DATA_DIR.to_owned();
         let run_as = RunAsRole::Both;
@@ -1523,7 +1584,7 @@ mod test {
             .context("failed to get NodeGetInfoResponse")?;
         assert_eq!(
             info_resp.get_node_id(),
-            util::DEFAULT_NODE_NAME,
+            DEFAULT_NODE_NAME,
             "node name not match",
         );
         assert_eq!(
@@ -1534,7 +1595,7 @@ mod test {
         let topology = info_resp.get_accessible_topology();
         assert_eq!(
             topology.get_segments().get(util::TOPOLOGY_KEY_NODE),
-            Some(&util::DEFAULT_NODE_NAME.to_owned()), // Expect &String not &str
+            Some(&DEFAULT_NODE_NAME.to_owned()), // Expect &String not &str
             "topology not match",
         );
 

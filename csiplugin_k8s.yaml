@@ -210,6 +210,7 @@ spec:
             - "--endpoint=$(CSI_NODE_ENDPOINT)"
             - "--drivername=csi.datenlord.io"
             - "--nodeid=$(NODE_ID)"
+            - "--nodeip=$(NODE_IP)"
             - "--workerport=50051"
             - "--runas=node"
             - "--datadir=$(DATA_DIR)"
@@ -219,6 +220,10 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
+            - name: NODE_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
             - name: CSI_NODE_ENDPOINT
               value: unix:///plugin/node.sock
             - name: RUST_LOG
@@ -371,6 +376,7 @@ spec:
             - "--listen-client-urls=http://0.0.0.0:2379"
             - "--initial-cluster=$(NODE_ID)=http://$(NODE_IP):2380"
             - "--listen-metrics-urls=http://0.0.0.0:2381"
+            - "--data-dir=/var/run/etcd/default.etcd"
           env:
             - name: NODE_ID
               valueFrom:
@@ -386,6 +392,14 @@ spec:
               port: 2381
             initialDelaySeconds: 10
             periodSeconds: 5
+          volumeMounts:
+            - name: etcd-data-dir
+              mountPath: /var/run/etcd
+      volumes:
+        - name: etcd-data-dir
+          hostPath:
+            path: /var/run/etcd
+            type: DirectoryOrCreate
 ---
 kind: StatefulSet
 apiVersion: apps/v1
@@ -419,6 +433,7 @@ spec:
             - "--endpoint=$(CSI_CONTROLLER_ENDPOINT)"
             - "--drivername=csi.datenlord.io"
             - "--nodeid=$(NODE_ID)"
+            - "--nodeip=$(NODE_IP)"
             - "--workerport=50051"
             - "--runas=controller"
             - "--datadir=$(DATA_DIR)"
@@ -428,6 +443,10 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
+            - name: NODE_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
             - name: CSI_CONTROLLER_ENDPOINT
               value: unix:///plugin/controller.sock
             - name: RUST_LOG
