@@ -6,11 +6,13 @@ use grpcio::{RpcContext, RpcStatus, RpcStatusCode, UnarySink};
 use log::{debug, error, info};
 use nix::mount::{self, MntFlags, MsFlags};
 use nix::unistd;
+use pnet::datalink;
 use protobuf::RepeatedField;
 use serde::de::DeserializeOwned;
 use std::ffi::OsStr;
 use std::fmt::Debug;
 use std::fs;
+use std::net::{IpAddr, ToSocketAddrs};
 use std::path::Path;
 use std::process::Command;
 use utilities::Cast;
@@ -339,4 +341,28 @@ pub fn umount_volume_bind_path(target_dir: &str) -> anyhow::Result<()> {
         .context(format!("failed to remove mount target path={}", target_dir))?;
 
     Ok(())
+}
+
+/// Get ip address of node
+pub fn get_ip_of_node(node_id: &str) -> IpAddr {
+    let hostname = format!("{}:{}", node_id, 0);
+    let sockets = hostname.to_socket_addrs();
+    if let Ok(s) = sockets {
+        let addrs: Vec<_> = s.collect();
+        addrs
+            .get(0)
+            .unwrap_or_else(|| panic!("Failed to get ip address"))
+            .ip()
+    } else {
+        let interfaces = datalink::interfaces();
+        let eth0 = interfaces.iter().find(|i| i.name == "eth0");
+        match eth0 {
+            Some(intf) => intf
+                .ips
+                .first()
+                .unwrap_or_else(|| panic!("Failed to get IP from eth0"))
+                .ip(),
+            None => panic!("Failed to get interface eth0"),
+        }
+    }
 }

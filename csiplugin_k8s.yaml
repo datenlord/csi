@@ -394,11 +394,11 @@ spec:
             periodSeconds: 5
           volumeMounts:
             - name: etcd-data-dir
-              mountPath: /var/run/etcd
+              mountPath: /var/lib/etcd
       volumes:
         - name: etcd-data-dir
           hostPath:
-            path: /var/run/etcd
+            path: /var/lib/etcd
             type: DirectoryOrCreate
 ---
 kind: StatefulSet

@@ -102,8 +102,7 @@ use anyhow::Context;
 use clap::{App, Arg, ArgMatches};
 use grpcio::{Environment, Server};
 use log::{debug, info};
-use pnet::datalink;
-use std::net::{IpAddr, ToSocketAddrs};
+use std::net::IpAddr;
 use std::sync::Arc;
 
 /// Build meta data
@@ -274,30 +273,6 @@ fn run_async_node_servers(node_server: Server, worker_server: Server) {
     });
 }
 
-/// Get ip address of node
-fn get_ip_of_node(node_id: &str) -> IpAddr {
-    let hostname = format!("{}:{}", node_id, 0);
-    let sockets = hostname.to_socket_addrs();
-    if let Ok(s) = sockets {
-        let addrs: Vec<_> = s.collect();
-        addrs
-            .get(0)
-            .unwrap_or_else(|| panic!("Failed to get ip address"))
-            .ip()
-    } else {
-        let interfaces = datalink::interfaces();
-        let eth0 = interfaces.iter().find(|i| i.name == "eth0");
-        match eth0 {
-            Some(intf) => intf
-                .ips
-                .first()
-                .unwrap_or_else(|| panic!("Failed to get IP from eth0"))
-                .ip(),
-            None => panic!("Failed to get interface eth0"),
-        }
-    }
-}
-
 /// Argument name of end point
 const END_POINT_ARG_NAME: &str = "endpoint";
 /// Argument name of worker port
@@ -316,7 +291,7 @@ const RUN_AS_ARG_NAME: &str = "runas";
 const ETCD_ADDRESS_ARG_NAME: &str = "etcd";
 
 /// CLI arguments
-struct Arguments {
+struct CliArgs {
     /// End point
     pub end_point: String,
     /// Worker port
@@ -433,7 +408,7 @@ fn parse_args() -> ArgMatches<'static> {
 }
 
 /// Get arguments value
-fn get_args(matches: &ArgMatches) -> Arguments {
+fn get_args(matches: &ArgMatches) -> CliArgs {
     let end_point = match matches.value_of(END_POINT_ARG_NAME) {
         Some(s) => {
             let sock = s.to_owned();
@@ -456,12 +431,12 @@ fn get_args(matches: &ArgMatches) -> Arguments {
     };
     let node_id = match matches.value_of(NODE_ID_ARG_NAME) {
         Some(n) => n.to_owned(),
-        None => panic!("No node id"),
+        None => panic!("No input node ID"),
     };
 
     let ip_address = match matches.value_of(NODE_IP_ARG_NAME) {
         Some(n) => n.parse().unwrap_or_else(|_| panic!("Invalid IP address")),
-        None => get_ip_of_node(&node_id),
+        None => util::get_ip_of_node(&node_id),
     };
 
     let driver_name = match matches.value_of(DRIVER_NAME_ARG_NAME) {
@@ -488,7 +463,7 @@ fn get_args(matches: &ArgMatches) -> Arguments {
         Some(a) => a.split(',').map(std::borrow::ToOwned::to_owned).collect(),
         None => Vec::new(),
     };
-    Arguments {
+    CliArgs {
         end_point,
         worker_port,
         node_id,
