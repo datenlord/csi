@@ -801,7 +801,7 @@ impl MetaData {
                 assert_eq!(
                     src_volume.node_id,
                     self.get_node_id(),
-                    "snapshot ID={} is on node ID={} not on local node ID={}",
+                    "volume ID={} is on node ID={} not on local node ID={}",
                     src_volume_id,
                     src_volume.node_id,
                     self.get_node_id(),

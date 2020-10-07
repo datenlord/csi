@@ -311,8 +311,8 @@ struct CliArgs {
 }
 
 /// Parse command line arguments
-fn parse_args() -> ArgMatches<'static> {
-    App::new("DatenLord")
+fn parse_args() -> CliArgs {
+    let matches = App::new("DatenLord")
         .about("Cloud Native Storage")
         .arg(
             Arg::with_name(END_POINT_ARG_NAME)
@@ -404,7 +404,8 @@ fn parse_args() -> ArgMatches<'static> {
                         required argument, no default value",
                 ),
         )
-        .get_matches()
+        .get_matches();
+    get_args(&matches)
 }
 
 /// Get arguments value
@@ -478,8 +479,7 @@ fn get_args(matches: &ArgMatches) -> CliArgs {
 fn main() -> anyhow::Result<()> {
     env_logger::init();
 
-    let matches = parse_args();
-    let args = get_args(&matches);
+    let args = parse_args();
     debug!(
         "{}={}, {}={}, {}={}, {}={}, {}={}, {}={}, {}={:?}, {}={:?}",
         END_POINT_ARG_NAME,
